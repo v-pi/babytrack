@@ -1,0 +1,745 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>BabyTrack</title>
+  <meta name="description" content="Suivi allaitement, sommeil et couches" />
+  <meta name="theme-color" content="#f7e8f0" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="BabyTrack" />
+  <link rel="manifest" href="manifest.json" />
+  <link rel="apple-touch-icon" href="icon-192.png" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --pink: #e8649a;
+      --pink-light: #fdf0f6;
+      --pink-mid: #f7d6e8;
+      --blue: #5b8fe8;
+      --blue-light: #eef3fd;
+      --green: #4caf82;
+      --green-light: #eaf7f1;
+      --amber: #e8a84e;
+      --amber-light: #fdf4e3;
+      --text: #2c2c2c;
+      --text-muted: #888;
+      --bg: #fafafa;
+      --card: #ffffff;
+      --border: #eee;
+      --radius: 16px;
+      --radius-sm: 10px;
+      --shadow: 0 2px 12px rgba(0,0,0,0.06);
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      height: 100dvh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* HEADER */
+    .header {
+      background: var(--card);
+      padding: 14px 20px 10px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+    }
+    .header h1 { font-size: 20px; font-weight: 700; color: var(--pink); letter-spacing: -0.3px; }
+    .header .date { font-size: 13px; color: var(--text-muted); }
+
+    /* MAIN CONTENT */
+    .content {
+      flex: 1;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+      padding: 16px;
+    }
+
+    /* TABS */
+    .tabs {
+      display: flex;
+      background: var(--card);
+      border-top: 1px solid var(--border);
+      flex-shrink: 0;
+      padding-bottom: env(safe-area-inset-bottom, 0px);
+    }
+    .tab {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 10px 4px 8px;
+      gap: 4px;
+      cursor: pointer;
+      border: none;
+      background: none;
+      color: var(--text-muted);
+      font-size: 11px;
+      font-weight: 500;
+      transition: color 0.15s;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .tab.active { color: var(--pink); }
+    .tab svg { width: 22px; height: 22px; }
+    .tab-indicator { display: none; }
+    .tab.active .tab-indicator { display: block; width: 4px; height: 4px; border-radius: 50%; background: var(--pink); margin-top: 2px; }
+
+    /* SECTION */
+    .section { display: none; }
+    .section.active { display: block; }
+
+    /* CARD */
+    .card {
+      background: var(--card);
+      border-radius: var(--radius);
+      padding: 18px;
+      margin-bottom: 14px;
+      box-shadow: var(--shadow);
+    }
+    .card-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 14px;
+    }
+
+    /* BREASTFEEDING */
+    .breast-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+    .breast-btn {
+      border: none;
+      border-radius: var(--radius);
+      padding: 20px 12px;
+      cursor: pointer;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+      transition: transform 0.1s, opacity 0.1s;
+      -webkit-tap-highlight-color: transparent;
+      position: relative;
+    }
+    .breast-btn:active { transform: scale(0.97); }
+    .breast-btn.left { background: var(--pink-light); }
+    .breast-btn.right { background: var(--blue-light); }
+    .breast-btn.running.left { background: var(--pink-mid); }
+    .breast-btn.running.right { background: #d6e4fa; }
+    .breast-btn .icon { font-size: 28px; }
+    .breast-btn .label { font-size: 13px; font-weight: 600; }
+    .breast-btn.left .label { color: var(--pink); }
+    .breast-btn.right .label { color: var(--blue); }
+    .breast-btn .timer-display {
+      font-size: 22px;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+      letter-spacing: -0.5px;
+    }
+    .breast-btn.left .timer-display { color: var(--pink); }
+    .breast-btn.right .timer-display { color: var(--blue); }
+    .breast-btn .status-dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: #ccc;
+      position: absolute; top: 12px; right: 12px;
+    }
+    .breast-btn.running .status-dot { background: #4caf50; }
+
+    .last-session {
+      font-size: 12px;
+      color: var(--text-muted);
+      text-align: center;
+      margin-top: 6px;
+    }
+
+    /* SLEEP */
+    .sleep-btn {
+      width: 100%;
+      border: none;
+      border-radius: var(--radius);
+      padding: 22px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      background: var(--green-light);
+      -webkit-tap-highlight-color: transparent;
+      transition: transform 0.1s;
+    }
+    .sleep-btn:active { transform: scale(0.99); }
+    .sleep-btn.sleeping { background: #d4f0e3; }
+    .sleep-left { display: flex; align-items: center; gap: 14px; }
+    .sleep-icon { font-size: 32px; }
+    .sleep-label { font-size: 16px; font-weight: 700; color: var(--green); }
+    .sleep-sublabel { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+    .sleep-timer { font-size: 26px; font-weight: 700; color: var(--green); font-variant-numeric: tabular-nums; letter-spacing: -0.5px; }
+
+    /* DIAPER */
+    .diaper-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin-bottom: 4px;
+    }
+    .diaper-btn {
+      border: none;
+      border-radius: var(--radius);
+      padding: 18px 12px;
+      cursor: pointer;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+      -webkit-tap-highlight-color: transparent;
+      transition: transform 0.1s;
+    }
+    .diaper-btn:active { transform: scale(0.96); }
+    .diaper-btn.wet { background: var(--blue-light); }
+    .diaper-btn.dirty { background: var(--amber-light); }
+    .diaper-btn .d-icon { font-size: 28px; }
+    .diaper-btn .d-label { font-size: 13px; font-weight: 600; }
+    .diaper-btn.wet .d-label { color: var(--blue); }
+    .diaper-btn.dirty .d-label { color: var(--amber); }
+    .diaper-btn .d-count { font-size: 22px; font-weight: 700; }
+    .diaper-btn.wet .d-count { color: var(--blue); }
+    .diaper-btn.dirty .d-count { color: var(--amber); }
+    .diaper-btn .d-sub { font-size: 11px; color: var(--text-muted); }
+
+    /* HISTORY */
+    .history-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 10px;
+      margin-top: 4px;
+    }
+    .history-list { display: flex; flex-direction: column; gap: 8px; }
+    .history-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 14px;
+      background: var(--card);
+      border-radius: var(--radius-sm);
+      box-shadow: var(--shadow);
+    }
+    .h-dot {
+      width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0;
+    }
+    .h-dot.left { background: var(--pink); }
+    .h-dot.right { background: var(--blue); }
+    .h-dot.sleep { background: var(--green); }
+    .h-dot.wet { background: var(--blue); }
+    .h-dot.dirty { background: var(--amber); }
+    .h-main { flex: 1; }
+    .h-label { font-size: 13px; font-weight: 600; color: var(--text); }
+    .h-sub { font-size: 11px; color: var(--text-muted); margin-top: 1px; }
+    .h-time { font-size: 12px; color: var(--text-muted); text-align: right; }
+
+    .empty-state {
+      text-align: center;
+      color: var(--text-muted);
+      font-size: 14px;
+      padding: 24px 0;
+    }
+
+    /* SUMMARY ROW */
+    .summary-row {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+    .summary-chip {
+      flex: 1;
+      background: var(--card);
+      border-radius: var(--radius-sm);
+      padding: 10px 12px;
+      box-shadow: var(--shadow);
+      text-align: center;
+    }
+    .summary-chip .s-val { font-size: 20px; font-weight: 700; }
+    .summary-chip .s-lab { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+    .summary-chip.pink .s-val { color: var(--pink); }
+    .summary-chip.blue .s-val { color: var(--blue); }
+    .summary-chip.green .s-val { color: var(--green); }
+    .summary-chip.amber .s-val { color: var(--amber); }
+
+    /* PULSE ANIMATION */
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.6; }
+    }
+    .running .timer-display, .sleeping .sleep-timer { animation: pulse 2s infinite; }
+
+    /* TOAST */
+    .toast {
+      position: fixed;
+      bottom: 90px;
+      left: 50%;
+      transform: translateX(-50%) translateY(20px);
+      background: #2c2c2c;
+      color: #fff;
+      padding: 10px 20px;
+      border-radius: 20px;
+      font-size: 13px;
+      font-weight: 500;
+      opacity: 0;
+      transition: all 0.3s;
+      pointer-events: none;
+      z-index: 999;
+      white-space: nowrap;
+    }
+    .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+    /* RESET BTN */
+    .reset-day {
+      background: none;
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 6px 14px;
+      font-size: 12px;
+      color: var(--text-muted);
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .reset-day:active { background: var(--bg); }
+  </style>
+</head>
+<body>
+
+<div class="header">
+  <h1>🌸 BabyTrack</h1>
+  <span class="date" id="today-date"></span>
+</div>
+
+<div class="content" id="content">
+
+  <!-- SECTION ALLAITEMENT -->
+  <div class="section active" id="section-feed">
+    <div class="card">
+      <div class="card-title">Allaitement</div>
+      <div class="breast-grid">
+        <div>
+          <button class="breast-btn left" id="btn-left" onclick="toggleBreast('left')">
+            <div class="status-dot"></div>
+            <div class="icon">🤱</div>
+            <div class="label">Sein gauche</div>
+            <div class="timer-display" id="timer-left">00:00</div>
+          </button>
+          <div class="last-session" id="last-left"></div>
+        </div>
+        <div>
+          <button class="breast-btn right" id="btn-right" onclick="toggleBreast('right')">
+            <div class="status-dot"></div>
+            <div class="icon">🤱</div>
+            <div class="label">Sein droit</div>
+            <div class="timer-display" id="timer-right">00:00</div>
+          </button>
+          <div class="last-session" id="last-right"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="summary-row">
+      <div class="summary-chip pink">
+        <div class="s-val" id="sum-feed-count">0</div>
+        <div class="s-lab">tétées aujourd'hui</div>
+      </div>
+      <div class="summary-chip blue">
+        <div class="s-val" id="sum-feed-total">0 min</div>
+        <div class="s-lab">durée totale</div>
+      </div>
+    </div>
+
+    <div class="history-title">Historique du jour</div>
+    <div class="history-list" id="feed-history"></div>
+  </div>
+
+  <!-- SECTION SOMMEIL -->
+  <div class="section" id="section-sleep">
+    <div class="card">
+      <div class="card-title">Sommeil</div>
+      <button class="sleep-btn" id="sleep-btn" onclick="toggleSleep()">
+        <div class="sleep-left">
+          <div class="sleep-icon" id="sleep-icon">😴</div>
+          <div>
+            <div class="sleep-label" id="sleep-label">Début du sommeil</div>
+            <div class="sleep-sublabel" id="sleep-sublabel">Appuyer pour commencer</div>
+          </div>
+        </div>
+        <div class="sleep-timer" id="sleep-timer">--:--</div>
+      </button>
+    </div>
+
+    <div class="summary-row">
+      <div class="summary-chip green">
+        <div class="s-val" id="sum-sleep-count">0</div>
+        <div class="s-lab">siestes aujourd'hui</div>
+      </div>
+      <div class="summary-chip blue">
+        <div class="s-val" id="sum-sleep-total">0 min</div>
+        <div class="s-lab">sommeil total</div>
+      </div>
+    </div>
+
+    <div class="history-title">Historique du jour</div>
+    <div class="history-list" id="sleep-history"></div>
+  </div>
+
+  <!-- SECTION COUCHES -->
+  <div class="section" id="section-diaper">
+    <div class="card">
+      <div class="card-title">Changement de couche</div>
+      <div class="diaper-grid">
+        <button class="diaper-btn wet" onclick="logDiaper('wet')">
+          <div class="d-icon">💧</div>
+          <div class="d-label">Pipi</div>
+          <div class="d-count" id="diaper-wet-count">0</div>
+          <div class="d-sub">aujourd'hui</div>
+        </button>
+        <button class="diaper-btn dirty" onclick="logDiaper('dirty')">
+          <div class="d-icon">💩</div>
+          <div class="d-label">Selle</div>
+          <div class="d-count" id="diaper-dirty-count">0</div>
+          <div class="d-sub">aujourd'hui</div>
+        </button>
+      </div>
+    </div>
+
+    <div class="history-title">Historique du jour</div>
+    <div class="history-list" id="diaper-history"></div>
+  </div>
+
+</div>
+
+<!-- BOTTOM TABS -->
+<div class="tabs">
+  <button class="tab active" id="tab-feed" onclick="switchTab('feed')">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 2C8 2 5 5 5 9c0 5 7 13 7 13s7-8 7-13c0-4-3-7-7-7z"/>
+      <circle cx="12" cy="9" r="2.5"/>
+    </svg>
+    Allaitement
+    <div class="tab-indicator"></div>
+  </button>
+  <button class="tab" id="tab-sleep" onclick="switchTab('sleep')">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+    </svg>
+    Sommeil
+    <div class="tab-indicator"></div>
+  </button>
+  <button class="tab" id="tab-diaper" onclick="switchTab('diaper')">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="3" y="8" width="18" height="10" rx="3"/>
+      <path d="M3 11h18M8 8V6a4 4 0 0 1 8 0v2"/>
+    </svg>
+    Couches
+    <div class="tab-indicator"></div>
+  </button>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+  // ─── STATE ───────────────────────────────────────────────────────────────────
+  const STATE_KEY = 'babytrack_v1';
+  let state = {
+    breast: { left: null, right: null },   // {start: timestamp} or null
+    sleep: null,                             // {start: timestamp} or null
+    logs: []                                 // [{type, side?, start, end?, duration?}]
+  };
+
+  function todayStr() {
+    return new Date().toLocaleDateString('fr-FR', {year:'numeric',month:'2-digit',day:'2-digit'});
+  }
+
+  function save() { localStorage.setItem(STATE_KEY, JSON.stringify(state)); }
+
+  function load() {
+    try {
+      const raw = localStorage.getItem(STATE_KEY);
+      if (raw) state = JSON.parse(raw);
+    } catch(e) {}
+  }
+
+  function todayLogs() {
+    const today = new Date().toDateString();
+    return state.logs.filter(l => new Date(l.timestamp || l.start).toDateString() === today);
+  }
+
+  // ─── TIMERS ───────────────────────────────────────────────────────────────────
+  let ticks = {};
+
+  function startTick(id, fn) {
+    if (ticks[id]) clearInterval(ticks[id]);
+    ticks[id] = setInterval(fn, 1000);
+    fn();
+  }
+
+  function stopTick(id) {
+    clearInterval(ticks[id]);
+    delete ticks[id];
+  }
+
+  function fmtDuration(ms) {
+    const s = Math.floor(ms / 1000);
+    const m = Math.floor(s / 60);
+    const h = Math.floor(m / 60);
+    if (h > 0) return `${h}h${String(m % 60).padStart(2, '0')}`;
+    return `${String(m).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
+  }
+
+  function fmtTime(ts) {
+    return new Date(ts).toLocaleTimeString('fr-FR', {hour:'2-digit', minute:'2-digit'});
+  }
+
+  // ─── BREASTFEEDING ────────────────────────────────────────────────────────────
+  function toggleBreast(side) {
+    const btn = document.getElementById('btn-' + side);
+    if (state.breast[side]) {
+      // STOP
+      const duration = Date.now() - state.breast[side].start;
+      state.logs.push({
+        type: 'feed', side, start: state.breast[side].start,
+        end: Date.now(), duration, timestamp: Date.now()
+      });
+      state.breast[side] = null;
+      stopTick('breast-' + side);
+      document.getElementById('timer-' + side).textContent = '00:00';
+      btn.classList.remove('running');
+      showToast(`Tétée ${side === 'left' ? 'gauche' : 'droite'} : ${fmtDuration(duration)}`);
+      save();
+      renderFeedHistory();
+      renderFeedSummary();
+      updateLastSession(side);
+    } else {
+      // START
+      state.breast[side] = { start: Date.now() };
+      btn.classList.add('running');
+      startTick('breast-' + side, () => {
+        const elapsed = Date.now() - state.breast[side].start;
+        document.getElementById('timer-' + side).textContent = fmtDuration(elapsed);
+      });
+      save();
+    }
+  }
+
+  function updateLastSession(side) {
+    const logs = todayLogs().filter(l => l.type === 'feed' && l.side === side);
+    const el = document.getElementById('last-' + side);
+    if (logs.length === 0) { el.textContent = ''; return; }
+    const last = logs[logs.length - 1];
+    el.textContent = `Dernière : ${fmtTime(last.start)} (${fmtDuration(last.duration)})`;
+  }
+
+  function renderFeedSummary() {
+    const logs = todayLogs().filter(l => l.type === 'feed');
+    const totalMs = logs.reduce((acc, l) => acc + (l.duration || 0), 0);
+    document.getElementById('sum-feed-count').textContent = logs.length;
+    document.getElementById('sum-feed-total').textContent = Math.round(totalMs / 60000) + ' min';
+  }
+
+  function renderFeedHistory() {
+    const logs = todayLogs().filter(l => l.type === 'feed').reverse();
+    const el = document.getElementById('feed-history');
+    if (logs.length === 0) {
+      el.innerHTML = '<div class="empty-state">Aucune tétée enregistrée</div>';
+      return;
+    }
+    el.innerHTML = logs.map(l => `
+      <div class="history-item">
+        <div class="h-dot ${l.side}"></div>
+        <div class="h-main">
+          <div class="h-label">Sein ${l.side === 'left' ? 'gauche' : 'droit'}</div>
+          <div class="h-sub">${fmtDuration(l.duration)}</div>
+        </div>
+        <div class="h-time">${fmtTime(l.start)}</div>
+      </div>
+    `).join('');
+    updateLastSession('left');
+    updateLastSession('right');
+  }
+
+  // ─── SLEEP ────────────────────────────────────────────────────────────────────
+  function toggleSleep() {
+    const btn = document.getElementById('sleep-btn');
+    if (state.sleep) {
+      const duration = Date.now() - state.sleep.start;
+      state.logs.push({
+        type: 'sleep', start: state.sleep.start,
+        end: Date.now(), duration, timestamp: Date.now()
+      });
+      state.sleep = null;
+      stopTick('sleep');
+      btn.classList.remove('sleeping');
+      document.getElementById('sleep-label').textContent = 'Début du sommeil';
+      document.getElementById('sleep-sublabel').textContent = 'Appuyer pour commencer';
+      document.getElementById('sleep-icon').textContent = '😴';
+      document.getElementById('sleep-timer').textContent = '--:--';
+      showToast(`Sommeil terminé : ${fmtDuration(duration)}`);
+      save();
+      renderSleepHistory();
+      renderSleepSummary();
+    } else {
+      state.sleep = { start: Date.now() };
+      btn.classList.add('sleeping');
+      document.getElementById('sleep-label').textContent = 'En train de dormir';
+      document.getElementById('sleep-sublabel').textContent = 'Appuyer pour arrêter';
+      document.getElementById('sleep-icon').textContent = '🌙';
+      startTick('sleep', () => {
+        const elapsed = Date.now() - state.sleep.start;
+        document.getElementById('sleep-timer').textContent = fmtDuration(elapsed);
+      });
+      save();
+    }
+  }
+
+  function renderSleepSummary() {
+    const logs = todayLogs().filter(l => l.type === 'sleep');
+    const totalMs = logs.reduce((acc, l) => acc + (l.duration || 0), 0);
+    document.getElementById('sum-sleep-count').textContent = logs.length;
+    document.getElementById('sum-sleep-total').textContent = Math.round(totalMs / 60000) + ' min';
+  }
+
+  function renderSleepHistory() {
+    const logs = todayLogs().filter(l => l.type === 'sleep').reverse();
+    const el = document.getElementById('sleep-history');
+    if (logs.length === 0) {
+      el.innerHTML = '<div class="empty-state">Aucun sommeil enregistré</div>';
+      return;
+    }
+    el.innerHTML = logs.map(l => `
+      <div class="history-item">
+        <div class="h-dot sleep"></div>
+        <div class="h-main">
+          <div class="h-label">Sommeil</div>
+          <div class="h-sub">${fmtTime(l.start)} → ${fmtTime(l.end)} · ${fmtDuration(l.duration)}</div>
+        </div>
+        <div class="h-time">${fmtDuration(l.duration)}</div>
+      </div>
+    `).join('');
+  }
+
+  // ─── DIAPERS ──────────────────────────────────────────────────────────────────
+  function logDiaper(type) {
+    state.logs.push({ type: 'diaper', diaperType: type, timestamp: Date.now() });
+    save();
+    renderDiaperHistory();
+    renderDiaperCounts();
+    showToast(type === 'wet' ? '💧 Couche pipi enregistrée' : '💩 Couche selle enregistrée');
+  }
+
+  function renderDiaperCounts() {
+    const logs = todayLogs().filter(l => l.type === 'diaper');
+    document.getElementById('diaper-wet-count').textContent = logs.filter(l => l.diaperType === 'wet').length;
+    document.getElementById('diaper-dirty-count').textContent = logs.filter(l => l.diaperType === 'dirty').length;
+  }
+
+  function renderDiaperHistory() {
+    const logs = todayLogs().filter(l => l.type === 'diaper').reverse();
+    const el = document.getElementById('diaper-history');
+    if (logs.length === 0) {
+      el.innerHTML = '<div class="empty-state">Aucun changement enregistré</div>';
+      return;
+    }
+    el.innerHTML = logs.map(l => `
+      <div class="history-item">
+        <div class="h-dot ${l.diaperType}"></div>
+        <div class="h-main">
+          <div class="h-label">${l.diaperType === 'wet' ? '💧 Pipi' : '💩 Selle'}</div>
+        </div>
+        <div class="h-time">${fmtTime(l.timestamp)}</div>
+      </div>
+    `).join('');
+  }
+
+  // ─── TABS ─────────────────────────────────────────────────────────────────────
+  function switchTab(name) {
+    ['feed','sleep','diaper'].forEach(t => {
+      document.getElementById('section-' + t).classList.toggle('active', t === name);
+      document.getElementById('tab-' + t).classList.toggle('active', t === name);
+    });
+  }
+
+  // ─── TOAST ───────────────────────────────────────────────────────────────────
+  let toastTimeout;
+  function showToast(msg) {
+    const el = document.getElementById('toast');
+    el.textContent = msg;
+    el.classList.add('show');
+    clearTimeout(toastTimeout);
+    toastTimeout = setTimeout(() => el.classList.remove('show'), 2500);
+  }
+
+  // ─── DATE ────────────────────────────────────────────────────────────────────
+  function updateDate() {
+    document.getElementById('today-date').textContent = new Date().toLocaleDateString('fr-FR', {
+      weekday: 'short', day: 'numeric', month: 'short'
+    });
+  }
+
+  // ─── RESUME IN-PROGRESS TIMERS ────────────────────────────────────────────────
+  function resumeTimers() {
+    if (state.breast.left) {
+      document.getElementById('btn-left').classList.add('running');
+      startTick('breast-left', () => {
+        document.getElementById('timer-left').textContent = fmtDuration(Date.now() - state.breast.left.start);
+      });
+    }
+    if (state.breast.right) {
+      document.getElementById('btn-right').classList.add('running');
+      startTick('breast-right', () => {
+        document.getElementById('timer-right').textContent = fmtDuration(Date.now() - state.breast.right.start);
+      });
+    }
+    if (state.sleep) {
+      const btn = document.getElementById('sleep-btn');
+      btn.classList.add('sleeping');
+      document.getElementById('sleep-label').textContent = 'En train de dormir';
+      document.getElementById('sleep-sublabel').textContent = 'Appuyer pour arrêter';
+      document.getElementById('sleep-icon').textContent = '🌙';
+      startTick('sleep', () => {
+        document.getElementById('sleep-timer').textContent = fmtDuration(Date.now() - state.sleep.start);
+      });
+    }
+  }
+
+  // ─── SERVICE WORKER ──────────────────────────────────────────────────────────
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('./sw.js').catch(() => {});
+  }
+
+  // ─── INIT ─────────────────────────────────────────────────────────────────────
+  load();
+  updateDate();
+  resumeTimers();
+  renderFeedHistory();
+  renderFeedSummary();
+  updateLastSession('left');
+  updateLastSession('right');
+  renderSleepHistory();
+  renderSleepSummary();
+  renderDiaperHistory();
+  renderDiaperCounts();
+</script>
+
+</body>
+</html>
