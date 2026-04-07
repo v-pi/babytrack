@@ -22,7 +22,7 @@
       --radius:16px;--radius-sm:10px;
       --shadow:0 1px 8px rgba(0,0,0,.07);
     }
-    body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--bg);color:var(--text);height:100dvh;display:flex;flex-direction:column;overflow:hidden}
+    body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--bg);color:var(--text);position:fixed;inset:0;display:flex;flex-direction:column;overflow:hidden}
 
     /* HEADER */
     .header{background:var(--card);padding:14px 20px 10px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
@@ -176,14 +176,16 @@
     /* EDIT MODAL */
     .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:100;display:flex;align-items:flex-end;justify-content:center;opacity:0;pointer-events:none;transition:opacity .2s}
     .modal-overlay.open{opacity:1;pointer-events:all}
-    .modal{background:var(--card);border-radius:20px 20px 0 0;width:100%;max-width:480px;padding:20px 20px calc(20px + env(safe-area-inset-bottom,0px));transform:translateY(100%);transition:transform .25s cubic-bezier(.4,0,.2,1)}
+    .modal{background:var(--card);border-radius:20px 20px 0 0;width:100%;max-width:480px;padding:20px 20px calc(20px + env(safe-area-inset-bottom,0px));transform:translateY(100%);transition:transform .25s cubic-bezier(.4,0,.2,1);max-height:90dvh;overflow-y:auto}
     .modal-overlay.open .modal{transform:translateY(0)}
     .modal-handle{width:36px;height:4px;border-radius:2px;background:var(--border);margin:0 auto 16px}
     .modal-title{font-size:16px;font-weight:700;margin-bottom:16px;color:var(--text)}
     .modal-field{margin-bottom:14px}
     .modal-field label{font-size:12px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;display:block;margin-bottom:6px}
-    .modal-field input[type=time]{width:100%;border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px 12px;font-size:15px;color:var(--text);background:var(--bg);font-family:inherit;-webkit-appearance:none;appearance:none}
-    .modal-field input[type=time]:focus{outline:none;border-color:var(--pink)}
+    .modal-row{display:flex;gap:12px;margin-bottom:14px}
+    .modal-row .modal-field{margin-bottom:0;flex:1}
+    .modal-field input[type=time], .modal-field input[type=date]{width:100%;border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px 12px;font-size:15px;color:var(--text);background:var(--bg);font-family:inherit;-webkit-appearance:none;appearance:none}
+    .modal-field input[type=time]:focus, .modal-field input[type=date]:focus{outline:none;border-color:var(--pink)}
     .modal-actions{display:flex;gap:10px;margin-top:18px}
     .btn{flex:1;border:none;border-radius:var(--radius-sm);padding:13px;font-size:14px;font-weight:600;cursor:pointer;-webkit-tap-highlight-color:transparent;transition:opacity .1s}
     .btn:active{opacity:.8}
@@ -805,15 +807,22 @@ function openEdit(id) {
   const overlay = document.getElementById('modal-overlay');
   const body = document.getElementById('modal-body');
 
-  // Champ de date commun à tous les types
-  const dateHtml = `<div class="modal-field"><label>Date</label><input type="date" id="edit-date" value="${fmtYMD(editingLog.timestamp || editingLog.start)}"/></div>`;
-
   if (editingLog.type === 'diaper') {
-    body.innerHTML = dateHtml + `<div class="modal-field"><label>Heure</label><input type="time" id="edit-ts" value="${fmtHM(editingLog.timestamp)}"/></div>`;
+    body.innerHTML = `
+      <div class="modal-row">
+        <div class="modal-field"><label>Date</label><input type="date" id="edit-date" value="${fmtYMD(editingLog.timestamp)}"/></div>
+        <div class="modal-field"><label>Heure</label><input type="time" id="edit-ts" value="${fmtHM(editingLog.timestamp)}"/></div>
+      </div>`;
   } else {
-    body.innerHTML = dateHtml + `
-      <div class="modal-field"><label>Début</label><input type="time" id="edit-start" value="${fmtHM(editingLog.start)}"/></div>
-      <div class="modal-field"><label>Fin</label><input type="time" id="edit-end" value="${fmtHM(editingLog.end)}"/></div>`;
+    body.innerHTML = `
+      <div class="modal-row">
+        <div class="modal-field"><label>Date début</label><input type="date" id="edit-start-date" value="${fmtYMD(editingLog.start)}"/></div>
+        <div class="modal-field"><label>Heure début</label><input type="time" id="edit-start" value="${fmtHM(editingLog.start)}"/></div>
+      </div>
+      <div class="modal-row">
+        <div class="modal-field"><label>Date fin</label><input type="date" id="edit-end-date" value="${fmtYMD(editingLog.end)}"/></div>
+        <div class="modal-field"><label>Heure fin</label><input type="time" id="edit-end" value="${fmtHM(editingLog.end)}"/></div>
+      </div>`;
   }
   overlay.classList.add('open');
 }
@@ -834,7 +843,6 @@ function applyTimeToDate(refTs, hmStr){
 function saveEntry() {
   if (!editingLog) return;
   const log = { ...editingLog };
-  const dateVal = document.getElementById('edit-date').value; // Récupère "YYYY-MM-DD"
 
   // Fonction interne pour fusionner la Date choisie et l'Heure choisie
   const combine = (dateStr, timeStr) => {
@@ -844,11 +852,10 @@ function saveEntry() {
   };
 
   if (log.type === 'diaper') {
-    log.timestamp = combine(dateVal, document.getElementById('edit-ts').value);
+    log.timestamp = combine(document.getElementById('edit-date').value, document.getElementById('edit-ts').value);
   } else {
-    log.start = combine(dateVal, document.getElementById('edit-start').value);
-    log.end = combine(dateVal, document.getElementById('edit-end').value);
-    if (log.end <= log.start) log.end += 86400000; // Gestion passage à minuit
+    log.start = combine(document.getElementById('edit-start-date').value, document.getElementById('edit-start').value);
+    log.end = combine(document.getElementById('edit-end-date').value, document.getElementById('edit-end').value);
     log.duration = log.end - log.start;
     log.timestamp = log.end;
   }
