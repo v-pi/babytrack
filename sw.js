@@ -1,4 +1,4 @@
-const CACHE = 'babytrack-v3';
+const CACHE = 'babytrack-v5';
 const ASSETS = ['./', './index.html', './manifest.json'];
 
 self.addEventListener('install', e => {

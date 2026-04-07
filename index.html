@@ -466,6 +466,10 @@ function fmtDayLabel(d){
   if(d.toDateString()===yest.toDateString()) return 'Hier';
   return d.toLocaleDateString('fr-FR',{weekday:'long',day:'numeric',month:'long'});
 }
+function fmtYMD(ts) {
+  const d = new Date(ts);
+  return d.toISOString().split('T')[0];
+}
 
 // ── Group logs by day ─────────────────────────────────────────────────────────
 function groupByDay(logs){
@@ -795,26 +799,21 @@ function renderTimeline(){
 // ── EDIT MODAL ────────────────────────────────────────────────────────────────
 let editingLog = null;
 
-function openEdit(id){
-  editingLog = allLogs.find(l=>l.id===id);
-  if(!editingLog) return;
+function openEdit(id) {
+  editingLog = allLogs.find(l => l.id === id);
+  if (!editingLog) return;
   const overlay = document.getElementById('modal-overlay');
-  const title   = document.getElementById('modal-title');
-  const body    = document.getElementById('modal-body');
+  const body = document.getElementById('modal-body');
 
-  if(editingLog.type==='feed'){
-    title.textContent = `Modifier tétée – Sein ${editingLog.side==='left'?'gauche':'droit'}`;
-    body.innerHTML = `
+  // Champ de date commun à tous les types
+  const dateHtml = `<div class="modal-field"><label>Date</label><input type="date" id="edit-date" value="${fmtYMD(editingLog.timestamp || editingLog.start)}"/></div>`;
+
+  if (editingLog.type === 'diaper') {
+    body.innerHTML = dateHtml + `<div class="modal-field"><label>Heure</label><input type="time" id="edit-ts" value="${fmtHM(editingLog.timestamp)}"/></div>`;
+  } else {
+    body.innerHTML = dateHtml + `
       <div class="modal-field"><label>Début</label><input type="time" id="edit-start" value="${fmtHM(editingLog.start)}"/></div>
       <div class="modal-field"><label>Fin</label><input type="time" id="edit-end" value="${fmtHM(editingLog.end)}"/></div>`;
-  } else if(editingLog.type==='sleep'){
-    title.textContent = 'Modifier sommeil';
-    body.innerHTML = `
-      <div class="modal-field"><label>Début</label><input type="time" id="edit-start" value="${fmtHM(editingLog.start)}"/></div>
-      <div class="modal-field"><label>Fin</label><input type="time" id="edit-end" value="${fmtHM(editingLog.end)}"/></div>`;
-  } else if(editingLog.type==='diaper'){
-    title.textContent = `Modifier couche – ${editingLog.diaperType==='wet'?'Pipi':'Selle'}`;
-    body.innerHTML = `<div class="modal-field"><label>Heure</label><input type="time" id="edit-ts" value="${fmtHM(editingLog.timestamp)}"/></div>`;
   }
   overlay.classList.add('open');
 }
@@ -832,31 +831,35 @@ function applyTimeToDate(refTs, hmStr){
   return d.getTime();
 }
 
-function saveEntry(){
-  if(!editingLog) return;
-  const log = {...editingLog};
-  if(log.type==='feed' || log.type==='sleep'){
-    const sv = document.getElementById('edit-start').value;
-    const ev = document.getElementById('edit-end').value;
-    if(!sv||!ev){showToast('Veuillez remplir les deux heures');return;}
-    log.start    = applyTimeToDate(log.start, sv);
-    log.end      = applyTimeToDate(log.end,   ev);
-    if(log.end <= log.start) log.end += 86400000;
+function saveEntry() {
+  if (!editingLog) return;
+  const log = { ...editingLog };
+  const dateVal = document.getElementById('edit-date').value; // Récupère "YYYY-MM-DD"
+
+  // Fonction interne pour fusionner la Date choisie et l'Heure choisie
+  const combine = (dateStr, timeStr) => {
+    const [y, m, d] = dateStr.split('-').map(Number);
+    const [hrs, min] = timeStr.split(':').map(Number);
+    return new Date(y, m - 1, d, hrs, min).getTime();
+  };
+
+  if (log.type === 'diaper') {
+    log.timestamp = combine(dateVal, document.getElementById('edit-ts').value);
+  } else {
+    log.start = combine(dateVal, document.getElementById('edit-start').value);
+    log.end = combine(dateVal, document.getElementById('edit-end').value);
+    if (log.end <= log.start) log.end += 86400000; // Gestion passage à minuit
     log.duration = log.end - log.start;
-    log.timestamp= log.end;
-  } else if(log.type==='diaper'){
-    const tv = document.getElementById('edit-ts').value;
-    if(!tv){showToast('Veuillez entrer une heure');return;}
-    log.timestamp = applyTimeToDate(log.timestamp, tv);
+    log.timestamp = log.end;
   }
-  dbPut(log).then(()=>{
-    const idx = allLogs.findIndex(l=>l.id===log.id);
-    if(idx>=0) allLogs[idx] = log;
+
+  dbPut(log).then(() => {
+    const idx = allLogs.findIndex(l => l.id === log.id);
+    if (idx >= 0) allLogs[idx] = log;
     renderAll();
-    showToast('Modifié !');
+    closeModal();
+    showToast('Modifié avec succès !');
   });
-  document.getElementById('modal-overlay').classList.remove('open');
-  editingLog = null;
 }
 
 // ── FIX: capture id BEFORE nullifying editingLog ──────────────────────────────
