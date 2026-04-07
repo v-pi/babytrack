@@ -126,6 +126,14 @@
     .export-btn{width:100%;border:1.5px dashed var(--border);border-radius:var(--radius-sm);padding:12px;background:none;cursor:pointer;font-size:13px;color:var(--text-muted);font-weight:500;-webkit-tap-highlight-color:transparent;display:flex;align-items:center;justify-content:center;gap:6px;margin-bottom:14px}
     .export-btn:active{background:var(--bg)}
 
+    /* TIMELINE NAV */
+    .tl-nav{display:flex;align-items:center;justify-content:space-between;background:var(--card);border-radius:var(--radius);padding:12px 16px;margin-bottom:12px;box-shadow:var(--shadow)}
+    .tl-nav-btn{border:none;background:none;cursor:pointer;font-size:22px;color:var(--pink);padding:4px 8px;border-radius:8px;-webkit-tap-highlight-color:transparent;line-height:1;transition:opacity .15s}
+    .tl-nav-btn:active{opacity:.5}
+    .tl-nav-btn:disabled{color:var(--border);cursor:default}
+    .tl-nav-label{font-size:15px;font-weight:700;color:var(--text);flex:1;text-align:center}
+    .tl-swipe-hint{font-size:11px;color:var(--text-muted);text-align:center;margin-bottom:10px;opacity:.7}
+
     /* TIMELINE */
     .timeline-day{background:var(--card);border-radius:var(--radius);margin-bottom:12px;box-shadow:var(--shadow)}
     .tl-header{padding:12px 14px 6px}
@@ -160,6 +168,10 @@
     .tl-leg-bar.sleep{background:var(--green)}
     .tl-leg-dot.wet{background:var(--blue)}
     .tl-leg-dot.dirty{background:var(--amber)}
+
+    /* Swipe transition */
+    #timeline-container{transition:opacity .15s}
+    #timeline-container.swiping{opacity:0}
 
     /* EDIT MODAL */
     .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:100;display:flex;align-items:flex-end;justify-content:center;opacity:0;pointer-events:none;transition:opacity .2s}
@@ -280,6 +292,15 @@
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
       Exporter en CSV
     </button>
+
+    <!-- Day navigation bar -->
+    <div class="tl-nav">
+      <button class="tl-nav-btn" id="tl-nav-prev" onclick="tlNav(+1)" title="Jour précédent">‹</button>
+      <div class="tl-nav-label" id="tl-nav-label">—</div>
+      <button class="tl-nav-btn" id="tl-nav-next" onclick="tlNav(-1)" title="Jour suivant">›</button>
+    </div>
+    <div class="tl-swipe-hint">← glisser pour naviguer →</div>
+
     <div class="card" style="padding:12px 14px;margin-bottom:14px">
       <div class="tl-legend" style="padding:0;border:none">
         <div class="tl-leg-item"><div class="tl-leg-bar left"></div>Sein gauche</div>
@@ -332,7 +353,6 @@
 
 <script>
 // ── IndexedDB ─────────────────────────────────────────────────────────────────
-// DATA FORMAT: unchanged — {id, type, side?, start?, end?, duration?, diaperType?, timestamp}
 const DB_NAME='babytrack', DB_VER=1, STORE='logs';
 let db=null;
 
@@ -400,7 +420,6 @@ function loadSession(){
 }
 
 // ── Timers (freeze-safe) ──────────────────────────────────────────────────────
-// All timers are restarted on visibilitychange to avoid iOS freeze
 let ticks={};
 
 function startTick(id,fn){
@@ -415,7 +434,6 @@ document.addEventListener('visibilitychange',()=>{
   if(document.hidden){
     stopAllTicks();
   } else {
-    // Restart any active timers
     ['left','right'].forEach(side=>{
       if(breastActive[side])
         startTick('b-'+side,()=>{
@@ -438,7 +456,7 @@ function fmtDur(ms){
   return `${String(m).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`;
 }
 function fmtTime(ts){return new Date(ts).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'});}
-function fmtHM(ts){// returns "HH:MM" for input[type=time]
+function fmtHM(ts){
   const d=new Date(ts);
   return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
 }
@@ -449,9 +467,8 @@ function fmtDayLabel(d){
   return d.toLocaleDateString('fr-FR',{weekday:'long',day:'numeric',month:'long'});
 }
 
-// ── Group logs by day for history views ───────────────────────────────────────
+// ── Group logs by day ─────────────────────────────────────────────────────────
 function groupByDay(logs){
-  // returns array of {label, logs} most recent first
   const byDay={};
   logs.forEach(l=>{
     const key=new Date(l.timestamp||l.start).toDateString();
@@ -463,19 +480,13 @@ function groupByDay(logs){
     .map(key=>({label:fmtDayLabel(new Date(key)),logs:byDay[key].slice().reverse()}));
 }
 
-// ── MUTUAL EXCLUSION: stop all active timers ──────────────────────────────────
+// ── MUTUAL EXCLUSION ──────────────────────────────────────────────────────────
 function stopAllActive(except){
   ['left','right'].forEach(side=>{
     if(except===side) return;
-    if(breastActive[side]){
-      // Save partial session silently (no log entry — user didn't stop intentionally)
-      // Actually: we stop and log it
-      _stopBreastSilent(side);
-    }
+    if(breastActive[side]) _stopBreastSilent(side);
   });
-  if(except!=='sleep' && sleepActive){
-    _stopSleepSilent();
-  }
+  if(except!=='sleep' && sleepActive) _stopSleepSilent();
 }
 
 function _stopBreastSilent(side){
@@ -654,131 +665,212 @@ function renderDiapers(){
 }
 
 // ── TIMELINE ──────────────────────────────────────────────────────────────────
+// tlDayIndex: 0 = most recent day, 1 = day before, etc.
+// direction: swipe right (deltaX > 0) = go to previous/older day (index +1)
+//            swipe left  (deltaX < 0) = go to next/newer day     (index -1)
+let tlDayIndex = 0;
+let tlDays = []; // sorted most recent first
+
+function tlNav(delta){
+  // delta = +1 → older (previous), delta = -1 → newer (next)
+  const newIdx = tlDayIndex + delta;
+  if(newIdx < 0 || newIdx >= tlDays.length) return;
+  const container = document.getElementById('timeline-container');
+  container.classList.add('swiping');
+  setTimeout(()=>{
+    tlDayIndex = newIdx;
+    renderTimeline();
+    container.classList.remove('swiping');
+  }, 150);
+}
+
+function updateTlNav(){
+  const label = document.getElementById('tl-nav-label');
+  const prev  = document.getElementById('tl-nav-prev');
+  const next  = document.getElementById('tl-nav-next');
+  if(!tlDays.length){
+    if(label) label.textContent = '—';
+    if(prev)  prev.disabled = true;
+    if(next)  next.disabled = true;
+    return;
+  }
+  if(label) label.textContent = fmtDayLabel(new Date(tlDays[tlDayIndex]));
+  if(prev)  prev.disabled = (tlDayIndex >= tlDays.length - 1); // no older day
+  if(next)  next.disabled = (tlDayIndex <= 0);                  // no newer day
+}
+
 function renderTimeline(){
-  const container=document.getElementById('timeline-container');
-  if(!allLogs.length){container.innerHTML='<div class="empty-state" style="padding:40px 0">Aucune donnée enregistrée</div>';return;}
-  const byDay={};
+  const container = document.getElementById('timeline-container');
+
+  // Rebuild day index from allLogs
+  const byDay = {};
   allLogs.forEach(l=>{
-    const key=new Date(l.timestamp||l.start).toDateString();
-    if(!byDay[key]) byDay[key]=[];
+    const key = new Date(l.timestamp||l.start).toDateString();
+    if(!byDay[key]) byDay[key] = [];
     byDay[key].push(l);
   });
-  const days=Object.keys(byDay).sort((a,b)=>new Date(b)-new Date(a));
-  const MS_DAY=86400000;
-  function pct(ts){const d=new Date(ts);return +((d.getHours()*3600+d.getMinutes()*60+d.getSeconds())*1000/MS_DAY*100).toFixed(3);}
-  function dpct(ms){return Math.max(0.8,+(ms/MS_DAY*100).toFixed(3));}
-  const ticksHtml=[0,6,12,18,24].map(h=>{
-    const p=(h/24*100).toFixed(1);
+  tlDays = Object.keys(byDay).sort((a,b) => new Date(b) - new Date(a));
+
+  if(!tlDays.length){
+    container.innerHTML='<div class="empty-state" style="padding:40px 0">Aucune donnée enregistrée</div>';
+    updateTlNav();
+    return;
+  }
+
+  // Clamp index
+  tlDayIndex = Math.max(0, Math.min(tlDayIndex, tlDays.length - 1));
+  updateTlNav();
+
+  const key  = tlDays[tlDayIndex];
+  const logs = byDay[key];
+
+  const MS_DAY = 86400000;
+  function pct(ts){
+    const d = new Date(ts);
+    return +((d.getHours()*3600 + d.getMinutes()*60 + d.getSeconds()) * 1000 / MS_DAY * 100).toFixed(3);
+  }
+  function dpct(ms){ return Math.max(0.8, +(ms / MS_DAY * 100).toFixed(3)); }
+
+  const ticksHtml = [0,6,12,18,24].map(h=>{
+    const p = (h/24*100).toFixed(1);
     return `<div class="tl-tick" style="left:${p}%"><div class="tl-tick-line"></div><div class="tl-tick-lbl">${String(h).padStart(2,'0')}h</div></div>`;
   }).join('');
 
-  container.innerHTML=days.map(key=>{
-    const logs=byDay[key];
-    const feedLogs=logs.filter(l=>l.type==='feed');
-    const sleepLogs=logs.filter(l=>l.type==='sleep');
-    const diaperLogs=logs.filter(l=>l.type==='diaper');
-    const feedMin=Math.round(feedLogs.reduce((a,l)=>a+(l.duration||0),0)/60000);
-    const sleepMin=Math.round(sleepLogs.reduce((a,l)=>a+(l.duration||0),0)/60000);
-    const stats=[
-      feedLogs.length?`<span style="color:var(--pink);font-weight:600">${feedLogs.length} tétée${feedLogs.length>1?'s':''} · ${feedMin} min</span>`:'',
-      sleepLogs.length?`<span style="color:var(--green);font-weight:600">${sleepMin} min sommeil</span>`:'',
-      diaperLogs.length?`<span>${diaperLogs.length} couche${diaperLogs.length>1?'s':''}</span>`:''
-    ].filter(Boolean).join('<span style="color:var(--border);margin:0 3px">·</span>');
-    const feedBars=feedLogs.map(l=>`<div class="tl-bar ${l.side}" style="left:${pct(l.start)}%;width:${dpct(l.duration)}%" title="Sein ${l.side==='left'?'gauche':'droit'} ${fmtTime(l.start)} (${fmtDur(l.duration)})"></div>`).join('');
-    const sleepBars=sleepLogs.map(l=>`<div class="tl-bar sleep" style="left:${pct(l.start)}%;width:${dpct(l.duration)}%" title="Sommeil ${fmtTime(l.start)} (${fmtDur(l.duration)})"></div>`).join('');
-    const diaperDots=diaperLogs.map(l=>`<div class="tl-dot ${l.diaperType}" style="left:${pct(l.timestamp)}%" title="${l.diaperType==='wet'?'Pipi':'Selle'} ${fmtTime(l.timestamp)}"></div>`).join('');
-    return `<div class="timeline-day">
-      <div class="tl-header">
-        <div class="tl-day-label">${fmtDayLabel(new Date(key))}</div>
-        <div class="tl-stats">${stats}</div>
-      </div>
-      <div class="tl-body">
-        <div class="tl-ticks-row"><div class="tl-tick-spacer"></div><div class="tl-ticks">${ticksHtml}</div></div>
-        ${feedLogs.length?`<div class="tl-row"><div class="tl-row-label">🤱</div><div class="tl-track feed-track">${feedBars}</div></div>`:''}
-        ${sleepLogs.length?`<div class="tl-row"><div class="tl-row-label">🌙</div><div class="tl-track sleep-track">${sleepBars}</div></div>`:''}
-        ${diaperLogs.length?`<div class="tl-row"><div class="tl-row-label">💧</div><div class="tl-track diaper-track">${diaperDots}</div></div>`:''}
-      </div>
-    </div>`;
-  }).join('');
+  const feedLogs   = logs.filter(l=>l.type==='feed');
+  const sleepLogs  = logs.filter(l=>l.type==='sleep');
+  const diaperLogs = logs.filter(l=>l.type==='diaper');
+
+  const feedMin  = Math.round(feedLogs.reduce((a,l)=>a+(l.duration||0),0)/60000);
+  const sleepMin = Math.round(sleepLogs.reduce((a,l)=>a+(l.duration||0),0)/60000);
+  const stats = [
+    feedLogs.length  ? `<span style="color:var(--pink);font-weight:600">${feedLogs.length} tétée${feedLogs.length>1?'s':''} · ${feedMin} min</span>` : '',
+    sleepLogs.length ? `<span style="color:var(--green);font-weight:600">${sleepMin} min sommeil</span>` : '',
+    diaperLogs.length? `<span>${diaperLogs.length} couche${diaperLogs.length>1?'s':''}</span>` : ''
+  ].filter(Boolean).join('<span style="color:var(--border);margin:0 3px">·</span>');
+
+  const feedBars   = feedLogs.map(l=>`<div class="tl-bar ${l.side}" style="left:${pct(l.start)}%;width:${dpct(l.duration)}%" title="Sein ${l.side==='left'?'gauche':'droit'} ${fmtTime(l.start)} (${fmtDur(l.duration)})"></div>`).join('');
+  const sleepBars  = sleepLogs.map(l=>`<div class="tl-bar sleep" style="left:${pct(l.start)}%;width:${dpct(l.duration)}%" title="Sommeil ${fmtTime(l.start)} (${fmtDur(l.duration)})"></div>`).join('');
+  const diaperDots = diaperLogs.map(l=>`<div class="tl-dot ${l.diaperType}" style="left:${pct(l.timestamp)}%" title="${l.diaperType==='wet'?'Pipi':'Selle'} ${fmtTime(l.timestamp)}"></div>`).join('');
+
+  container.innerHTML = `<div class="timeline-day">
+    <div class="tl-header">
+      <div class="tl-stats">${stats||'<span style="color:var(--text-muted)">Aucun événement</span>'}</div>
+    </div>
+    <div class="tl-body">
+      <div class="tl-ticks-row"><div class="tl-tick-spacer"></div><div class="tl-ticks">${ticksHtml}</div></div>
+      ${feedLogs.length  ? `<div class="tl-row"><div class="tl-row-label">🤱</div><div class="tl-track feed-track">${feedBars}</div></div>`  : ''}
+      ${sleepLogs.length ? `<div class="tl-row"><div class="tl-row-label">🌙</div><div class="tl-track sleep-track">${sleepBars}</div></div>` : ''}
+      ${diaperLogs.length? `<div class="tl-row"><div class="tl-row-label">💧</div><div class="tl-track diaper-track">${diaperDots}</div></div>` : ''}
+    </div>
+  </div>`;
 }
 
+// ── SWIPE on timeline ─────────────────────────────────────────────────────────
+(function(){
+  let startX = 0, startY = 0, tracking = false;
+  const THRESHOLD = 50; // px
+
+  function onTouchStart(e){
+    if(e.touches.length !== 1) return;
+    startX = e.touches[0].clientX;
+    startY = e.touches[0].clientY;
+    tracking = true;
+  }
+  function onTouchEnd(e){
+    if(!tracking) return;
+    tracking = false;
+    const dx = e.changedTouches[0].clientX - startX;
+    const dy = e.changedTouches[0].clientY - startY;
+    // Only horizontal swipe (not scroll)
+    if(Math.abs(dx) < THRESHOLD || Math.abs(dy) > Math.abs(dx) * 0.8) return;
+    // Swipe right (dx > 0) = older/previous = tlNav(+1)
+    // Swipe left  (dx < 0) = newer/next    = tlNav(-1)
+    tlNav(dx > 0 ? +1 : -1);
+  }
+
+  document.getElementById('section-timeline').addEventListener('touchstart', onTouchStart, {passive:true});
+  document.getElementById('section-timeline').addEventListener('touchend',   onTouchEnd,   {passive:true});
+})();
+
 // ── EDIT MODAL ────────────────────────────────────────────────────────────────
-let editingLog=null;
+let editingLog = null;
 
 function openEdit(id){
-  editingLog=allLogs.find(l=>l.id===id);
+  editingLog = allLogs.find(l=>l.id===id);
   if(!editingLog) return;
-  const overlay=document.getElementById('modal-overlay');
-  const title=document.getElementById('modal-title');
-  const body=document.getElementById('modal-body');
+  const overlay = document.getElementById('modal-overlay');
+  const title   = document.getElementById('modal-title');
+  const body    = document.getElementById('modal-body');
 
   if(editingLog.type==='feed'){
-    title.textContent=`Modifier tétée – Sein ${editingLog.side==='left'?'gauche':'droit'}`;
-    body.innerHTML=`
+    title.textContent = `Modifier tétée – Sein ${editingLog.side==='left'?'gauche':'droit'}`;
+    body.innerHTML = `
       <div class="modal-field"><label>Début</label><input type="time" id="edit-start" value="${fmtHM(editingLog.start)}"/></div>
       <div class="modal-field"><label>Fin</label><input type="time" id="edit-end" value="${fmtHM(editingLog.end)}"/></div>`;
   } else if(editingLog.type==='sleep'){
-    title.textContent='Modifier sommeil';
-    body.innerHTML=`
+    title.textContent = 'Modifier sommeil';
+    body.innerHTML = `
       <div class="modal-field"><label>Début</label><input type="time" id="edit-start" value="${fmtHM(editingLog.start)}"/></div>
       <div class="modal-field"><label>Fin</label><input type="time" id="edit-end" value="${fmtHM(editingLog.end)}"/></div>`;
   } else if(editingLog.type==='diaper'){
-    title.textContent=`Modifier couche – ${editingLog.diaperType==='wet'?'Pipi':'Selle'}`;
-    body.innerHTML=`<div class="modal-field"><label>Heure</label><input type="time" id="edit-ts" value="${fmtHM(editingLog.timestamp)}"/></div>`;
+    title.textContent = `Modifier couche – ${editingLog.diaperType==='wet'?'Pipi':'Selle'}`;
+    body.innerHTML = `<div class="modal-field"><label>Heure</label><input type="time" id="edit-ts" value="${fmtHM(editingLog.timestamp)}"/></div>`;
   }
   overlay.classList.add('open');
 }
 
 function closeModal(e){
-  if(e && e.target!==document.getElementById('modal-overlay')) return;
+  if(e && e.target !== document.getElementById('modal-overlay')) return;
   document.getElementById('modal-overlay').classList.remove('open');
-  editingLog=null;
+  editingLog = null;
 }
 
 function applyTimeToDate(refTs, hmStr){
-  const d=new Date(refTs);
-  const [h,m]=hmStr.split(':').map(Number);
+  const d = new Date(refTs);
+  const [h,m] = hmStr.split(':').map(Number);
   d.setHours(h,m,0,0);
   return d.getTime();
 }
 
 function saveEntry(){
   if(!editingLog) return;
-  const log={...editingLog};
-  if(log.type==='feed'||log.type==='sleep'){
-    const sv=document.getElementById('edit-start').value;
-    const ev=document.getElementById('edit-end').value;
+  const log = {...editingLog};
+  if(log.type==='feed' || log.type==='sleep'){
+    const sv = document.getElementById('edit-start').value;
+    const ev = document.getElementById('edit-end').value;
     if(!sv||!ev){showToast('Veuillez remplir les deux heures');return;}
-    log.start=applyTimeToDate(log.start,sv);
-    log.end=applyTimeToDate(log.end,ev);
-    if(log.end<=log.start) log.end+=86400000; // handles midnight crossover
-    log.duration=log.end-log.start;
-    log.timestamp=log.end;
+    log.start    = applyTimeToDate(log.start, sv);
+    log.end      = applyTimeToDate(log.end,   ev);
+    if(log.end <= log.start) log.end += 86400000;
+    log.duration = log.end - log.start;
+    log.timestamp= log.end;
   } else if(log.type==='diaper'){
-    const tv=document.getElementById('edit-ts').value;
+    const tv = document.getElementById('edit-ts').value;
     if(!tv){showToast('Veuillez entrer une heure');return;}
-    log.timestamp=applyTimeToDate(log.timestamp,tv);
+    log.timestamp = applyTimeToDate(log.timestamp, tv);
   }
   dbPut(log).then(()=>{
-    const idx=allLogs.findIndex(l=>l.id===log.id);
-    if(idx>=0) allLogs[idx]=log;
+    const idx = allLogs.findIndex(l=>l.id===log.id);
+    if(idx>=0) allLogs[idx] = log;
     renderAll();
     showToast('Modifié !');
   });
   document.getElementById('modal-overlay').classList.remove('open');
-  editingLog=null;
+  editingLog = null;
 }
 
+// ── FIX: capture id BEFORE nullifying editingLog ──────────────────────────────
 function deleteEntry(){
   if(!editingLog) return;
   if(!confirm('Supprimer cet événement ?')) return;
-  dbDel(editingLog.id).then(()=>{
-    allLogs=allLogs.filter(l=>l.id!==editingLog.id);
+  const id = editingLog.id;           // ← capture synchronously
+  document.getElementById('modal-overlay').classList.remove('open');
+  editingLog = null;                  // ← safe to null now
+  dbDel(id).then(()=>{               // ← use captured id in the callback
+    allLogs = allLogs.filter(l => l.id !== id);
     renderAll();
     showToast('Supprimé');
   });
-  document.getElementById('modal-overlay').classList.remove('open');
-  editingLog=null;
 }
 
 // ── EXPORT CSV ────────────────────────────────────────────────────────────────
@@ -786,20 +878,20 @@ function exportCSV(){
   if(!allLogs.length){showToast('Aucune donnée à exporter');return;}
   const rows=[['date','heure','type','detail','duree_min']];
   [...allLogs].sort((a,b)=>(a.timestamp||a.start)-(b.timestamp||b.start)).forEach(l=>{
-    const ts=l.timestamp||l.start;
-    const date=new Date(ts).toLocaleDateString('fr-FR');
-    const heure=fmtTime(ts);
-    if(l.type==='feed')      rows.push([date,heure,'allaitement',l.side==='left'?'sein gauche':'sein droit',Math.round((l.duration||0)/60000)]);
+    const ts   = l.timestamp||l.start;
+    const date = new Date(ts).toLocaleDateString('fr-FR');
+    const heure= fmtTime(ts);
+    if(l.type==='feed')       rows.push([date,heure,'allaitement',l.side==='left'?'sein gauche':'sein droit',Math.round((l.duration||0)/60000)]);
     else if(l.type==='sleep') rows.push([date,heure,'sommeil',`${fmtTime(l.start)} > ${fmtTime(l.end)}`,Math.round((l.duration||0)/60000)]);
     else if(l.type==='diaper')rows.push([date,heure,'couche',l.diaperType==='wet'?'pipi':'selle','']);
   });
-  const csv=rows.map(r=>r.join(',')).join('\n');
-  const blob=new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8;'});
-  const url=URL.createObjectURL(blob);
-  const a=document.createElement('a');
-  a.href=url;a.download=`babytrack_${new Date().toISOString().slice(0,10)}.csv`;
-  document.body.appendChild(a);a.click();
-  document.body.removeChild(a);URL.revokeObjectURL(url);
+  const csv  = rows.map(r=>r.join(',')).join('\n');
+  const blob = new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8;'});
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href=url; a.download=`babytrack_${new Date().toISOString().slice(0,10)}.csv`;
+  document.body.appendChild(a); a.click();
+  document.body.removeChild(a); URL.revokeObjectURL(url);
   showToast('Export CSV téléchargé !');
 }
 
@@ -816,7 +908,7 @@ function switchTab(name){
 
 // ── RENDER ALL ────────────────────────────────────────────────────────────────
 function renderAll(){
-  renderFeed();renderSleep();renderDiapers();
+  renderFeed(); renderSleep(); renderDiapers();
   if(currentTab==='timeline') renderTimeline();
 }
 
@@ -824,7 +916,7 @@ function renderAll(){
 let toastTO;
 function showToast(msg){
   const el=document.getElementById('toast');
-  el.textContent=msg;el.classList.add('show');
+  el.textContent=msg; el.classList.add('show');
   clearTimeout(toastTO);
   toastTO=setTimeout(()=>el.classList.remove('show'),2500);
 }
@@ -835,7 +927,6 @@ document.getElementById('today-date').textContent=new Date().toLocaleDateString(
 openDB().then(()=>dbGetAll()).then(logs=>{
   allLogs=logs;
   loadSession();
-  // Resume timers
   ['left','right'].forEach(side=>{
     if(breastActive[side]){
       document.getElementById('btn-'+side).classList.add('running');
@@ -858,7 +949,8 @@ openDB().then(()=>dbGetAll()).then(logs=>{
   renderAll();
 }).catch(()=>showToast('Erreur base de données'));
 
-if('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(()=>{});
+if('serviceWorker' in navigator)
+  navigator.serviceWorker.register('./sw.js').catch(()=>{});
 </script>
 </body>
 </html>
