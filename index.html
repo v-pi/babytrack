@@ -2,7 +2,7 @@
 <html lang="fr">
 <head>
   <meta charset="UTF-8"/>
-  <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no,viewport-fit=cover"/>
   <title>BabyTrack</title>
   <meta name="theme-color" content="#f7e8f0"/>
   <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -10,12 +10,17 @@
   <meta name="apple-mobile-web-app-title" content="BabyTrack"/>
   <link rel="manifest" href="manifest.json"/>
   <link rel="apple-touch-icon" href="icon-192.png"/>
-  
-  <!-- Import Supabase -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
   <style>
     *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+
+    /* ─── Prevent pull-to-refresh & rubber-band scroll breaking layout ─── */
+    html{
+      height:100%;
+      /* Prevents Firefox/Chrome pull-to-refresh */
+      overscroll-behavior:none;
+    }
     :root{
       --pink:#e8649a;--pink-light:#fdf0f6;--pink-mid:#f7d6e8;
       --blue:#5b8fe8;--blue-light:#eef3fd;
@@ -25,20 +30,97 @@
       --bg:#f4f4f6;--card:#fff;--border:#ebebeb;
       --radius:16px;--radius-sm:10px;
       --shadow:0 1px 8px rgba(0,0,0,.07);
+      /* Safe areas with fallbacks for Firefox (which doesn't support env()) */
+      --sab: env(safe-area-inset-bottom, 0px);
+      --sat: env(safe-area-inset-top, 0px);
+      /* Tab bar height for content offset */
+      --tab-h: 58px;
     }
-    body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--bg);color:var(--text);height:100dvh;display:flex;flex-direction:column;overflow:hidden}
+
+    body{
+      font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+      background:var(--bg);color:var(--text);
+      /* Use min/max trick for Firefox compatibility – dvh > svh > 100% */
+      height: 100dvh;
+      height: 100vh; /* fallback */
+      height: 100dvh;
+      display:flex;flex-direction:column;
+      overflow:hidden;
+      /* Prevent pull-to-refresh on all browsers */
+      overscroll-behavior-y:none;
+      /* Prevent tap highlight bleed on Firefox Android */
+      -webkit-tap-highlight-color:transparent;
+    }
 
     /* HEADER */
-    .header{background:var(--card);padding:14px 20px 10px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
-    .header h1{font-size:20px;font-weight:700;color:var(--pink);letter-spacing:-.3px}
-    .header .hdate{font-size:13px;color:var(--text-muted)}
+    .header{
+      background:var(--card);
+      padding:12px 16px 10px;
+      border-bottom:1px solid var(--border);
+      display:flex;align-items:center;justify-content:space-between;
+      flex-shrink:0;
+      /* Push below notch on iOS */
+      padding-top:calc(12px + var(--sat));
+    }
+    .header-left{display:flex;align-items:center;gap:10px}
+    .header h1{font-size:19px;font-weight:700;color:var(--pink);letter-spacing:-.3px;white-space:nowrap}
 
-    /* CONTENT */
-    .content{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:16px}
+    /* Profile switcher pill */
+    .profile-pill{
+      display:flex;align-items:center;gap:6px;
+      background:var(--pink-light);border:1.5px solid var(--pink-mid);
+      border-radius:20px;padding:5px 11px 5px 8px;
+      cursor:pointer;-webkit-tap-highlight-color:transparent;
+      font-size:13px;font-weight:600;color:var(--pink);
+      transition:background .15s;white-space:nowrap;max-width:160px;overflow:hidden;
+    }
+    .profile-pill:active{background:var(--pink-mid)}
+    .profile-emoji{font-size:15px;line-height:1}
+    .profile-name{overflow:hidden;text-overflow:ellipsis}
+    .profile-chevron{font-size:10px;opacity:.6;margin-left:2px}
 
-    /* TABS */
-    .tabs{display:flex;background:var(--card);border-top:1px solid var(--border);flex-shrink:0;padding-bottom:env(safe-area-inset-bottom,0px)}
-    .tab{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:10px 4px 8px;gap:3px;cursor:pointer;border:none;background:none;color:var(--text-muted);font-size:10px;font-weight:500;-webkit-tap-highlight-color:transparent}
+    /* Sync indicator */
+    .sync-dot{
+      width:7px;height:7px;border-radius:50%;
+      background:#ddd;flex-shrink:0;transition:background .3s;
+    }
+    .sync-dot.ok{background:#4caf50}
+    .sync-dot.syncing{background:var(--amber);animation:pulse 1s infinite}
+    .sync-dot.error{background:#e05;animation:none}
+
+    .header-right{display:flex;align-items:center;gap:10px}
+    .hdate{font-size:12px;color:var(--text-muted)}
+
+    /* CONTENT  — key fix: explicit height so it scrolls within fixed tab bar */
+    .content{
+      flex:1;
+      overflow-y:auto;
+      overflow-x:hidden;
+      -webkit-overflow-scrolling:touch;
+      padding:16px;
+      /* Prevent pull-to-refresh inside scroll container */
+      overscroll-behavior-y:contain;
+      /* Ensure it doesn't overflow behind tab bar */
+      padding-bottom:calc(16px + var(--tab-h) + var(--sab));
+    }
+
+    /* TABS — fixed so Firefox's dynamic URL bar doesn't shift it */
+    .tabs{
+      display:flex;
+      background:var(--card);
+      border-top:1px solid var(--border);
+      flex-shrink:0;
+      /* Account for home indicator / safe area */
+      padding-bottom:var(--sab);
+      /* Exact fixed height so content knows how far to pad */
+      min-height:var(--tab-h);
+    }
+    .tab{
+      flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;
+      padding:8px 4px 6px;gap:2px;cursor:pointer;border:none;background:none;
+      color:var(--text-muted);font-size:10px;font-weight:500;
+      -webkit-tap-highlight-color:transparent;
+    }
     .tab.active{color:var(--pink)}
     .tab svg{width:21px;height:21px}
     .tab-dot{width:4px;height:4px;border-radius:50%;background:var(--pink);display:none}
@@ -107,6 +189,8 @@
     .history-list{display:flex;flex-direction:column;gap:7px}
     .history-item{display:flex;align-items:center;gap:10px;padding:10px 14px;background:var(--card);border-radius:var(--radius-sm);box-shadow:var(--shadow);cursor:pointer;-webkit-tap-highlight-color:transparent;transition:background .1s}
     .history-item:active{background:#f7f7f7}
+    /* Unsynced item indicator */
+    .history-item.pending{border-left:3px solid var(--amber)}
     .h-dot{width:9px;height:9px;border-radius:50%;flex-shrink:0}
     .h-dot.left{background:var(--pink)}
     .h-dot.right{background:var(--blue)}
@@ -130,9 +214,6 @@
     .tl-nav-label{font-size:15px;font-weight:700;color:var(--text);flex:1;text-align:center}
     .tl-swipe-hint{font-size:11px;color:var(--text-muted);text-align:center;margin-bottom:10px;opacity:.7}
     .timeline-day{background:var(--card);border-radius:var(--radius);margin-bottom:12px;box-shadow:var(--shadow)}
-    .tl-header{padding:12px 14px 6px}
-    .tl-day-label{font-size:14px;font-weight:700;color:var(--text)}
-    .tl-stats{font-size:11px;color:var(--text-muted);margin-top:3px;display:flex;flex-wrap:wrap;gap:5px}
     .tl-body{padding:4px 14px 14px;display:flex;flex-direction:column;gap:8px}
     .tl-ticks-row{display:flex;align-items:center;gap:8px}
     .tl-tick-spacer{width:22px;flex-shrink:0}
@@ -162,16 +243,15 @@
     .tl-leg-bar.sleep{background:var(--green)}
     .tl-leg-dot.wet{background:var(--blue)}
     .tl-leg-dot.dirty{background:var(--amber)}
-
     #timeline-container{transition:opacity .15s}
     #timeline-container.swiping{opacity:0}
 
     /* MODALS */
     .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:100;display:flex;align-items:flex-end;justify-content:center;opacity:0;pointer-events:none;transition:opacity .2s}
     .modal-overlay.open{opacity:1;pointer-events:all}
-    .modal{background:var(--card);border-radius:20px 20px 0 0;width:100%;max-width:480px;padding:20px 20px calc(20px + env(safe-area-inset-bottom,0px));transform:translateY(100%);transition:transform .25s cubic-bezier(.4,0,.2,1);max-height:90dvh;overflow-y:auto}
+    .modal{background:var(--card);border-radius:20px 20px 0 0;width:100%;max-width:480px;padding:20px 20px calc(20px + var(--sab));transform:translateY(100%);transition:transform .25s cubic-bezier(.4,0,.2,1);max-height:90dvh;overflow-y:auto}
     .modal-overlay.open .modal{transform:translateY(0)}
-    .modal.center{border-radius:20px;margin:auto;transform:translateY(20px);max-height:85dvh}
+    .modal.center{border-radius:20px;margin:auto;transform:translateY(20px);max-height:85dvh;padding:24px 24px calc(24px + var(--sab))}
     .modal-overlay.open .modal.center{transform:translateY(0)}
     .modal-handle{width:36px;height:4px;border-radius:2px;background:var(--border);margin:0 auto 16px}
     .modal-title{font-size:16px;font-weight:700;margin-bottom:16px;color:var(--text)}
@@ -179,7 +259,7 @@
     .modal-field label{font-size:12px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;display:block;margin-bottom:6px}
     .modal-row{display:flex;gap:12px;margin-bottom:14px}
     .modal-row .modal-field{margin-bottom:0;flex:1}
-    .modal-field input[type=time], .modal-field input[type=date], .modal-field input[type=text]{width:100%;border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px 12px;font-size:15px;color:var(--text);background:var(--bg);font-family:inherit;-webkit-appearance:none;appearance:none}
+    .modal-field input[type=time],.modal-field input[type=date],.modal-field input[type=text]{width:100%;border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px 12px;font-size:15px;color:var(--text);background:var(--bg);font-family:inherit;-webkit-appearance:none;appearance:none}
     .modal-field input:focus{outline:none;border-color:var(--pink)}
     .modal-actions{display:flex;gap:10px;margin-top:18px}
     .btn{flex:1;border:none;border-radius:var(--radius-sm);padding:13px;font-size:14px;font-weight:600;cursor:pointer;-webkit-tap-highlight-color:transparent;transition:opacity .1s;text-align:center}
@@ -188,20 +268,44 @@
     .btn-cancel{background:var(--bg);color:var(--text-muted)}
     .btn-save{background:var(--pink);color:#fff}
 
+    /* PROFILE LIST MODAL */
+    .profile-list{display:flex;flex-direction:column;gap:10px;margin-bottom:20px}
+    .profile-item{display:flex;align-items:center;gap:12px;padding:13px 14px;border-radius:var(--radius-sm);border:1.5px solid var(--border);background:var(--bg);cursor:pointer;transition:all .15s}
+    .profile-item.active-profile{border-color:var(--pink);background:var(--pink-light)}
+    .profile-item:active{opacity:.7}
+    .profile-item-emoji{font-size:22px;width:32px;text-align:center}
+    .profile-item-info{flex:1}
+    .profile-item-name{font-size:14px;font-weight:600;color:var(--text)}
+    .profile-item-sub{font-size:12px;color:var(--text-muted);margin-top:2px}
+    .profile-item-badge{font-size:10px;font-weight:700;color:var(--pink);background:var(--pink-light);padding:3px 8px;border-radius:10px}
+    .profile-item-edit{font-size:13px;color:var(--text-muted);padding:4px 8px;border:none;background:none;cursor:pointer}
+    .emoji-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:8px;margin-bottom:14px}
+    .emoji-opt{font-size:22px;text-align:center;padding:8px;border-radius:8px;border:2px solid transparent;cursor:pointer;transition:border-color .1s}
+    .emoji-opt.selected{border-color:var(--pink);background:var(--pink-light)}
+
+    /* ANIMATIONS */
     @keyframes pulse{0%,100%{opacity:1}50%{opacity:.55}}
     .running .b-timer,.sleeping .sleep-timer{animation:pulse 2s infinite}
-    .toast{position:fixed;bottom:86px;left:50%;transform:translateX(-50%) translateY(16px);background:#2c2c2c;color:#fff;padding:9px 18px;border-radius:20px;font-size:13px;font-weight:500;opacity:0;transition:all .25s;pointer-events:none;z-index:200;white-space:nowrap}
+    .toast{position:fixed;bottom:calc(var(--tab-h) + 12px + var(--sab));left:50%;transform:translateX(-50%) translateY(16px);background:#2c2c2c;color:#fff;padding:9px 18px;border-radius:20px;font-size:13px;font-weight:500;opacity:0;transition:all .25s;pointer-events:none;z-index:200;white-space:nowrap}
     .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
-    .share-icon{background:none;border:none;color:var(--pink);cursor:pointer;display:none;padding:5px}
+    .share-icon{background:none;border:none;color:var(--pink);cursor:pointer;padding:5px}
   </style>
 </head>
 <body>
 
 <div class="header">
-  <h1>🌸 BabyTrack</h1>
-  <div style="display:flex;align-items:center;gap:15px">
+  <div class="header-left">
+    <h1>🌸</h1>
+    <button class="profile-pill" onclick="openProfileModal()">
+      <span class="profile-emoji" id="header-emoji">👶</span>
+      <span class="profile-name" id="header-name">Mon bébé</span>
+      <span class="profile-chevron">▼</span>
+    </button>
+  </div>
+  <div class="header-right">
+    <div class="sync-dot" id="sync-dot" title="Synchronisation"></div>
     <span class="hdate" id="today-date"></span>
-    <button class="share-icon" id="btn-share" onclick="openShareModal()">
+    <button class="share-icon" id="btn-share" style="display:none" onclick="openShareModal()">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
     </button>
   </div>
@@ -346,16 +450,43 @@
   </div>
 </div>
 
-<!-- SYNC ONBOARDING MODAL -->
-<div class="modal-overlay" id="sync-modal" style="background:var(--bg)">
+<!-- PROFILE MODAL -->
+<div class="modal-overlay" id="profile-modal" onclick="closeProfileModal(event)">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <div class="modal-title">Profils enfants</div>
+    <div class="profile-list" id="profile-list"></div>
+    <button class="btn btn-save" style="width:100%" onclick="openAddProfileForm()">+ Ajouter un enfant</button>
+    <!-- Add/Edit form (hidden by default) -->
+    <div id="profile-form" style="display:none;margin-top:16px">
+      <hr style="border:none;border-top:1px solid var(--border);margin-bottom:16px"/>
+      <div class="modal-field">
+        <label>Prénom</label>
+        <input type="text" id="pf-name" placeholder="Ex : Emma" maxlength="20"/>
+      </div>
+      <div class="modal-field">
+        <label>Emoji</label>
+        <div class="emoji-grid" id="emoji-grid"></div>
+      </div>
+      <div class="modal-actions" style="margin-top:0">
+        <button class="btn btn-cancel" onclick="closeProfileForm()">Annuler</button>
+        <button class="btn btn-save" onclick="saveProfile()">Créer</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- SYNC / FAMILY MODAL (for new profile or profile without family) -->
+<div class="modal-overlay" id="sync-modal">
   <div class="modal center" style="width:90%">
-    <div class="modal-title" style="text-align:center;font-size:20px;">👶 Démarrer la Synchronisation</div>
-    <p style="font-size:14px;color:var(--text-muted);text-align:center;margin-bottom:20px;line-height:1.4">Pour partager le suivi avec l'autre parent et activer la sauvegarde, créez une famille ou rejoignez-en une avec un code.</p>
+    <div class="modal-title" style="text-align:center;font-size:20px;" id="sync-modal-title">👶 Synchronisation</div>
+    <p style="font-size:14px;color:var(--text-muted);text-align:center;margin-bottom:20px;line-height:1.4" id="sync-modal-desc">Créez une famille pour partager le suivi avec l'autre parent ou rejoignez-en une existante.</p>
     <div style="display:flex;flex-direction:column;gap:12px;">
       <button class="btn btn-save" onclick="createFamily()">Créer ma famille</button>
-      <div style="text-align:center;color:var(--border);font-size:12px;margin:5px 0">OU</div>
-      <input type="text" id="invite-code" placeholder="Collez un code d'invitation ici..." style="width:100%;border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px;font-size:14px;text-align:center;"/>
-      <button class="btn btn-cancel" onclick="joinFamily()" style="border:1px solid var(--border)">Rejoindre avec le code</button>
+      <div style="text-align:center;color:var(--text-muted);font-size:12px;margin:2px 0">— ou —</div>
+      <input type="text" id="invite-code" placeholder="Coller un code d'invitation…" style="width:100%;border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px;font-size:14px;text-align:center;"/>
+      <button class="btn btn-cancel" style="border:1px solid var(--border)" onclick="joinFamily()">Rejoindre avec le code</button>
+      <button class="btn btn-cancel" style="opacity:.6;font-size:12px" onclick="skipSync()">Continuer sans synchronisation</button>
     </div>
   </div>
 </div>
@@ -365,7 +496,7 @@
   <div class="modal center" style="width:90%">
     <div class="modal-title" style="text-align:center;">Partager l'accès</div>
     <p style="font-size:13px;color:var(--text-muted);text-align:center;margin-bottom:20px;">Scannez ce QR Code avec l'autre téléphone ou partagez le lien.</p>
-    <img id="qr-code" src="" style="width:180px;height:180px;margin:0 auto 20px;display:block;border-radius:12px;border:1px solid var(--border);padding:10px;"/>
+    <img id="qr-code" src="" alt="QR Code" style="width:180px;height:180px;margin:0 auto 20px;display:block;border-radius:12px;border:1px solid var(--border);padding:10px;"/>
     <div style="display:flex;gap:10px;">
       <input type="text" id="share-link-input" readonly style="flex:1;border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px;font-size:12px;background:var(--bg);color:var(--text-muted)"/>
       <button class="btn btn-save" style="flex:none;padding:10px 14px;font-size:12px" onclick="copyShareLink()">Copier</button>
@@ -378,248 +509,397 @@
 
 <script>
 // ── SUPABASE CONFIGURATION ───────────────────────────────────────────────────
-// REMPLACE CES VALEURS PAR CELLES DE TON PROJET SUPABASE
 const SUPABASE_URL = 'https://vcufbfvqtfgrcjjxbhee.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_EUJrpx_XbBds3EPk1rCtmQ_3qTWTaOX';
 // ─────────────────────────────────────────────────────────────────────────────
 
-// ── Variables Globales ────────────────────────────────────────────────────────
+// ── PROFILES ──────────────────────────────────────────────────────────────────
+// Schema: [{id, name, emoji, familyId}]
+let profiles = [];
+let activeProfileId = null;
+
+function loadProfiles() {
+  try { profiles = JSON.parse(localStorage.getItem('bt_profiles') || '[]'); } catch(e) { profiles = []; }
+  activeProfileId = localStorage.getItem('bt_active_profile');
+
+  // Legacy migration: if old single-profile data exists, wrap it
+  const legacyFamilyId = localStorage.getItem('bt_family_id');
+  if(profiles.length === 0) {
+    const p = { id: crypto.randomUUID(), name: 'Mon bébé', emoji: '👶', familyId: legacyFamilyId || null };
+    profiles = [p];
+    activeProfileId = p.id;
+    saveProfiles();
+  }
+  if(!activeProfileId || !profiles.find(p => p.id === activeProfileId)) {
+    activeProfileId = profiles[0].id;
+  }
+}
+
+function saveProfiles() {
+  localStorage.setItem('bt_profiles', JSON.stringify(profiles));
+  localStorage.setItem('bt_active_profile', activeProfileId);
+}
+
+function getActiveProfile() {
+  return profiles.find(p => p.id === activeProfileId) || profiles[0];
+}
+
+function updateHeaderProfile() {
+  const p = getActiveProfile();
+  document.getElementById('header-emoji').textContent = p.emoji;
+  document.getElementById('header-name').textContent = p.name;
+}
+
+// ── GLOBAL STATE ──────────────────────────────────────────────────────────────
 let supabaseClient = null;
-let familyId = localStorage.getItem('bt_family_id');
+let familyId = null;
 let allLogs = [];
+let pendingSyncIds = new Set(); // IDs that failed to sync to Supabase
 let breastActive = { left: null, right: null };
 let sleepActive = null;
 let ticks = {};
 let editingLog = null;
 let currentTab = 'feed';
 let toastTO;
+let editingProfileId = null;
+const EMOJIS = ['👶','🧒','🐣','🌟','🌈','🦋','🐧','🐻','🦊','🐼','🍭','🌸'];
 
-// ── INDEXED_DB (Cache local / Mode hors ligne) ────────────────────────────────
-const DB_NAME='babytrack', DB_VER=2, STORE='logs';
-let db=null;
+// ── INDEXED_DB (keyed per profile) ────────────────────────────────────────────
+const DB_NAME='babytrack', DB_VER=3, STORE='logs';
+let db = null;
 
-function openDB(){
-  return new Promise((res,rej)=>{
-    const req=indexedDB.open(DB_NAME,DB_VER);
-    req.onupgradeneeded=e=>{
-      const d=e.target.result;
+function openDB() {
+  return new Promise((res,rej) => {
+    const req = indexedDB.open(DB_NAME, DB_VER);
+    req.onupgradeneeded = e => {
+      const d = e.target.result;
       if(!d.objectStoreNames.contains(STORE))
-        d.createObjectStore(STORE,{keyPath:'id'});
+        d.createObjectStore(STORE, {keyPath:'id'});
     };
-    req.onsuccess=e=>{db=e.target.result;res()};
-    req.onerror=()=>rej(req.error);
+    req.onsuccess = e => { db = e.target.result; res(); };
+    req.onerror = () => rej(req.error);
   });
 }
-function dbPut(log){
-  return new Promise((res,rej)=>{
-    const req=db.transaction(STORE,'readwrite').objectStore(STORE).put(log);
-    req.onsuccess=()=>res();
-    req.onerror=()=>rej(req.error);
+// All IDB ops filter by current familyId (or profileId fallback for local-only)
+function dbPut(log) {
+  return new Promise((res,rej) => {
+    const req = db.transaction(STORE,'readwrite').objectStore(STORE).put(log);
+    req.onsuccess = () => res();
+    req.onerror = () => rej(req.error);
   });
 }
-function dbDel(id){
-  return new Promise((res,rej)=>{
-    const req=db.transaction(STORE,'readwrite').objectStore(STORE).delete(id);
-    req.onsuccess=()=>res();
-    req.onerror=()=>rej(req.error);
+function dbDel(id) {
+  return new Promise((res,rej) => {
+    const req = db.transaction(STORE,'readwrite').objectStore(STORE).delete(id);
+    req.onsuccess = () => res();
+    req.onerror = () => rej(req.error);
   });
 }
-function dbGetAll(){
-  return new Promise((res,rej)=>{
-    const req=db.transaction(STORE,'readonly').objectStore(STORE).getAll();
-    req.onsuccess=()=>res(req.result);
-    req.onerror=()=>rej(req.error);
+function dbGetAll() {
+  return new Promise((res,rej) => {
+    const req = db.transaction(STORE,'readonly').objectStore(STORE).getAll();
+    req.onsuccess = () => {
+      // Filter logs belonging to current profile (by family_id or profile_id)
+      const all = req.result || [];
+      const filtered = all.filter(l =>
+        (familyId && l.family_id === familyId) ||
+        (!familyId && l.profile_id === activeProfileId) ||
+        // Legacy logs without any id marker belong to the first profile
+        (!l.family_id && !l.profile_id)
+      );
+      res(filtered);
+    };
+    req.onerror = () => rej(req.error);
   });
 }
-function dbClear(){
-  return new Promise((res,rej)=>{
-    const req=db.transaction(STORE,'readwrite').objectStore(STORE).clear();
-    req.onsuccess=()=>res();
-    req.onerror=()=>rej(req.error);
+function dbClear() {
+  // Only clear logs for current profile, not all
+  return new Promise(async (res) => {
+    const all = await new Promise((r,rej) => {
+      const req = db.transaction(STORE,'readonly').objectStore(STORE).getAll();
+      req.onsuccess = () => r(req.result || []);
+      req.onerror = () => r([]);
+    });
+    const toDelete = all.filter(l =>
+      (familyId && l.family_id === familyId) ||
+      (!familyId && l.profile_id === activeProfileId)
+    );
+    const tx = db.transaction(STORE,'readwrite');
+    for(const l of toDelete) tx.objectStore(STORE).delete(l.id);
+    tx.oncomplete = res;
+    tx.onerror = res; // don't fail completely
   });
 }
 
-// ── INITIALISATION & SUPABASE ─────────────────────────────────────────────────
+// ── INITIALISATION ────────────────────────────────────────────────────────────
 window.onload = async () => {
-  document.getElementById('today-date').textContent = new Date().toLocaleDateString('fr-FR',{weekday:'short',day:'numeric',month:'short'});
+  document.getElementById('today-date').textContent =
+    new Date().toLocaleDateString('fr-FR',{weekday:'short',day:'numeric',month:'short'});
+
   await openDB();
-  
-  // Vérification de lien d'invitation (QR/Lien)
+  loadProfiles();
+  updateHeaderProfile();
+
+  // Handle invite link
   const params = new URLSearchParams(window.location.search);
   const invite = params.get('invite');
   if(invite && invite.length > 20) {
-    familyId = invite;
-    localStorage.setItem('bt_family_id', familyId);
-    window.history.replaceState({}, document.title, window.location.pathname); // Nettoie l'URL
+    // Apply to active profile
+    const p = getActiveProfile();
+    p.familyId = invite;
+    saveProfiles();
+    window.history.replaceState({}, document.title, window.location.pathname);
+    showToast('Lien d\'invitation détecté !');
   }
 
-  // Chargement local rapide
-  allLogs = await dbGetAll();
-  loadSession();
-  renderAll();
+  // Load data for active profile
+  await loadProfileData();
 
+  const p = getActiveProfile();
+  familyId = p.familyId;
   if(!familyId) {
     document.getElementById('sync-modal').classList.add('open');
   } else {
     document.getElementById('btn-share').style.display = 'block';
-    if(SUPABASE_URL !== 'VOTRE_SUPABASE_URL') initSupabase();
+    initSupabase();
   }
+
+  // Auto-sync when network comes back
+  window.addEventListener('online', () => {
+    setSyncDot('syncing');
+    setTimeout(() => {
+      if(supabaseClient) syncWithRemote();
+      else if(familyId) initSupabase();
+    }, 800);
+  });
+  window.addEventListener('offline', () => setSyncDot('error'));
 };
 
+async function loadProfileData() {
+  allLogs = await dbGetAll();
+  loadSession();
+  renderAll();
+  restoreTimers();
+}
+
+function setSyncDot(state) {
+  const d = document.getElementById('sync-dot');
+  d.className = 'sync-dot ' + state;
+}
+
+// ── SUPABASE ──────────────────────────────────────────────────────────────────
 function initSupabase() {
-  supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
-    global: { headers: { 'x-family-id': familyId } }
-  });
+  if(!SUPABASE_URL || SUPABASE_URL === 'VOTRE_SUPABASE_URL') return;
+  supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
   syncWithRemote();
   setupRealtime();
 }
 
-// ── ONBOARDING / FAMILLE ──────────────────────────────────────────────────────
-async function createFamily() {
-  if (SUPABASE_URL === 'VOTRE_SUPABASE_URL') { showToast('Configuration Supabase manquante !'); return; }
-  // On génère le familyId
-  familyId = crypto.randomUUID();
-  localStorage.setItem('bt_family_id', familyId);
-  
-  // Création temporaire d'un client sans header strict pour créer la famille
-  const tempClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-  await tempClient.from('families').insert({ id: familyId });
-  
-  // Migration des logs locaux existants (les anciens IDs int deviennent des UUIDs)
-  for (let l of allLogs) {
-    if (typeof l.id === 'number') await dbDel(l.id); // nettoie vieux formats
-    l.id = crypto.randomUUID();
-    await dbPut(l);
-  }
-  
-  document.getElementById('sync-modal').classList.remove('open');
-  document.getElementById('btn-share').style.display = 'block';
-  
-  initSupabase();
-  
-  // Envoi asynchrone des données locales à la base
-  if (allLogs.length > 0) {
-    const supaLogs = allLogs.map(l => ({ ...l, family_id: familyId }));
-    await supabaseClient.from('logs').insert(supaLogs);
-  }
-  showToast('Famille créée et synchronisée !');
-}
-
-function joinFamily() {
-  const code = document.getElementById('invite-code').value.trim();
-  if(!code || code.length < 20) { showToast('Code invalide'); return; }
-  familyId = code;
-  localStorage.setItem('bt_family_id', familyId);
-  document.getElementById('sync-modal').classList.remove('open');
-  document.getElementById('btn-share').style.display = 'block';
-  initSupabase();
-  showToast('Famille rejointe !');
-}
-
-// ── SYNCHRONISATION ───────────────────────────────────────────────────────────
+// ── SYNC: push local-only first, then pull all ────────────────────────────────
 async function syncWithRemote() {
-  if(!navigator.onLine || !supabaseClient) return;
-  const { data, error } = await supabaseClient.from('logs').select('*');
-  if (!error && data) {
-    allLogs = data;
-    renderAll();
-    await dbClear();
-    for (let l of data) await dbPut(l); // Màj du cache local
-  }
-  
-  // Rapatrier l'état des chronos
-  const { data: timers } = await supabaseClient.from('active_timers').select('*');
-  if (timers) {
-    ['left','right'].forEach(side => {
-      const active = timers.find(t => t.type === 'feed' && t.side === side);
-      if(active) activateBreastTimerLocal(side, active.start_time);
-      else stopBreastTimerLocal(side);
-    });
-    const sActive = timers.find(t => t.type === 'sleep');
-    if(sActive) activateSleepTimerLocal(sActive.start_time);
-    else stopSleepTimerLocal();
+  if(!navigator.onLine || !supabaseClient || !familyId) return;
+  setSyncDot('syncing');
+  try {
+    // 1. Get list of IDs already in Supabase
+    const { data: remoteIds, error: idErr } = await supabaseClient
+      .from('logs').select('id').eq('family_id', familyId);
+    if(idErr) throw idErr;
+
+    const remoteIdSet = new Set((remoteIds || []).map(r => r.id));
+
+    // 2. Push local logs NOT yet in Supabase (created offline or failed earlier)
+    const localOnly = allLogs.filter(l => !remoteIdSet.has(l.id));
+    if(localOnly.length > 0) {
+      const toInsert = localOnly.map(l => ({...l, family_id: familyId}));
+      const { error: pushErr } = await supabaseClient.from('logs').upsert(toInsert);
+      if(pushErr) console.warn('Partial sync push error:', pushErr);
+      else {
+        // Clear pending flags for successfully pushed items
+        localOnly.forEach(l => pendingSyncIds.delete(l.id));
+      }
+    }
+
+    // 3. Fetch everything from Supabase
+    const { data, error } = await supabaseClient.from('logs').select('*').eq('family_id', familyId);
+    if(error) throw error;
+
+    if(data) {
+      allLogs = data;
+      renderAll();
+      await dbClear();
+      for(const l of data) await dbPut(l);
+    }
+
+    // 4. Sync active timers
+    const { data: timers } = await supabaseClient
+      .from('active_timers').select('*').eq('family_id', familyId);
+    if(timers) {
+      ['left','right'].forEach(side => {
+        const a = timers.find(t => t.type === 'feed' && t.side === side);
+        if(a && !breastActive[side]) activateBreastTimerLocal(side, a.start_time);
+        else if(!a && breastActive[side]) stopBreastTimerLocal(side);
+      });
+      const sa = timers.find(t => t.type === 'sleep');
+      if(sa && !sleepActive) activateSleepTimerLocal(sa.start_time);
+      else if(!sa && sleepActive) stopSleepTimerLocal();
+    }
+
+    setSyncDot('ok');
+    setTimeout(() => setSyncDot(''), 3000);
+  } catch(e) {
+    console.error('Sync error:', e);
+    setSyncDot('error');
   }
 }
 
-// ── REALTIME (Chronos et logs en direct) ──────────────────────────────────────
 function setupRealtime() {
-  supabaseClient.channel('public:active_timers')
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'active_timers' }, payload => {
-      const { eventType, new: n, old: o } = payload;
-      if (eventType === 'INSERT' || eventType === 'UPDATE') {
-        if(n.type === 'feed') activateBreastTimerLocal(n.side, n.start_time);
+  if(!supabaseClient) return;
+  supabaseClient.channel('timers:'+familyId)
+    .on('postgres_changes',{event:'*',schema:'public',table:'active_timers'},payload => {
+      const {eventType,new:n,old:o} = payload;
+      if(!n?.family_id || n.family_id !== familyId) return;
+      if(eventType==='INSERT'||eventType==='UPDATE'){
+        if(n.type==='feed') activateBreastTimerLocal(n.side, n.start_time);
         else activateSleepTimerLocal(n.start_time);
-      } else if (eventType === 'DELETE') {
-        if(o.type === 'feed') stopBreastTimerLocal(o.side);
+      } else if(eventType==='DELETE'){
+        if(o.type==='feed') stopBreastTimerLocal(o.side);
         else stopSleepTimerLocal();
       }
     }).subscribe();
 
-  supabaseClient.channel('public:logs')
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'logs' }, payload => {
-      if (payload.eventType === 'INSERT') {
-        if(!allLogs.find(l => l.id === payload.new.id)) {
-          allLogs.push(payload.new);
-          dbPut(payload.new); renderAll();
+  supabaseClient.channel('logs:'+familyId)
+    .on('postgres_changes',{event:'*',schema:'public',table:'logs'},payload => {
+      const {eventType,new:n,old:o} = payload;
+      if(n?.family_id && n.family_id !== familyId) return;
+      if(eventType==='INSERT'){
+        if(!allLogs.find(l => l.id === n.id)){
+          allLogs.push(n); dbPut(n); renderAll();
         }
-      } else if (payload.eventType === 'DELETE') {
-        allLogs = allLogs.filter(l => l.id !== payload.old.id);
-        dbDel(payload.old.id); renderAll();
-      } else if (payload.eventType === 'UPDATE') {
-        const idx = allLogs.findIndex(l => l.id === payload.new.id);
-        if(idx >= 0) allLogs[idx] = payload.new; else allLogs.push(payload.new);
-        dbPut(payload.new); renderAll();
+      } else if(eventType==='DELETE'){
+        allLogs = allLogs.filter(l => l.id !== o.id);
+        dbDel(o.id); renderAll();
+      } else if(eventType==='UPDATE'){
+        const idx = allLogs.findIndex(l => l.id === n.id);
+        if(idx>=0) allLogs[idx]=n; else allLogs.push(n);
+        dbPut(n); renderAll();
       }
     }).subscribe();
 }
 
-// ── ACTIONS SUR LA BASE ───────────────────────────────────────────────────────
-function logAction(log) {
+// ── LOG ACTIONS ───────────────────────────────────────────────────────────────
+async function logAction(log) {
   log.id = crypto.randomUUID();
+  // Tag the log with the appropriate owner
+  if(familyId) log.family_id = familyId;
+  else log.profile_id = activeProfileId;
+
   allLogs.push(log);
   renderAll();
-  dbPut(log); // Cache local
-  if(supabaseClient && navigator.onLine) supabaseClient.from('logs').insert({ ...log, family_id: familyId });
+  await dbPut(log);
+
+  if(supabaseClient && navigator.onLine && familyId) {
+    setSyncDot('syncing');
+    const { error } = await supabaseClient.from('logs').insert({...log, family_id: familyId});
+    if(error) {
+      console.warn('Insert failed, marked pending:', error);
+      pendingSyncIds.add(log.id);
+      setSyncDot('error');
+    } else {
+      setSyncDot('ok');
+      setTimeout(() => setSyncDot(''), 2000);
+    }
+  }
 }
 
 async function updateLogAction(log) {
   const idx = allLogs.findIndex(l => l.id === log.id);
-  if (idx >= 0) allLogs[idx] = log;
+  if(idx>=0) allLogs[idx] = log;
   renderAll();
   await dbPut(log);
-  if(supabaseClient && navigator.onLine) supabaseClient.from('logs').upsert({ ...log, family_id: familyId });
+  if(supabaseClient && navigator.onLine && familyId)
+    await supabaseClient.from('logs').upsert({...log, family_id: familyId});
 }
 
 async function deleteLogAction(id) {
   allLogs = allLogs.filter(l => l.id !== id);
   renderAll();
   await dbDel(id);
-  if(supabaseClient && navigator.onLine) supabaseClient.from('logs').delete().eq('id', id);
+  if(supabaseClient && navigator.onLine && familyId)
+    await supabaseClient.from('logs').delete().eq('id', id);
 }
 
 async function setRemoteTimer(type, side, startTime) {
-  if (!supabaseClient || !navigator.onLine) return;
-  if (startTime) await supabaseClient.from('active_timers').upsert({ family_id: familyId, type, side, start_time: startTime });
-  else {
-    let q = supabaseClient.from('active_timers').delete().eq('type', type);
+  if(!supabaseClient || !navigator.onLine || !familyId) return;
+  if(startTime) {
+    await supabaseClient.from('active_timers').upsert({family_id:familyId,type,side,start_time:startTime});
+  } else {
+    let q = supabaseClient.from('active_timers').delete().eq('type',type).eq('family_id',familyId);
     if(side) q = q.eq('side', side);
     await q;
   }
 }
 
-// ── GESTION DES CHRONOS (Timers) ──────────────────────────────────────────────
-function startTick(id, fn) {
-  if(ticks[id]) clearInterval(ticks[id]);
-  ticks[id] = setInterval(fn, 1000); fn();
-}
-function stopTick(id) { clearInterval(ticks[id]); delete ticks[id]; }
+// ── ONBOARDING / FAMILLE ──────────────────────────────────────────────────────
+async function createFamily() {
+  if(!SUPABASE_URL || SUPABASE_URL === 'VOTRE_SUPABASE_URL'){
+    showToast('Configuration Supabase manquante'); return;
+  }
+  const newFamilyId = crypto.randomUUID();
+  const tempClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
-// ALLAITEMENT
+  // Create family record
+  await tempClient.from('families').insert({id: newFamilyId}).maybeSingle();
+
+  // Update active profile with new familyId
+  const p = getActiveProfile();
+  p.familyId = newFamilyId;
+  saveProfiles();
+  familyId = newFamilyId;
+
+  document.getElementById('sync-modal').classList.remove('open');
+  document.getElementById('btn-share').style.display = 'block';
+
+  initSupabase();
+
+  // Push existing local logs to Supabase
+  if(allLogs.length > 0) {
+    setSyncDot('syncing');
+    const toInsert = allLogs.map(l => ({...l, id: l.id || crypto.randomUUID(), family_id: newFamilyId}));
+    await supabaseClient.from('logs').upsert(toInsert);
+    setSyncDot('ok'); setTimeout(() => setSyncDot(''), 2000);
+  }
+  showToast('Famille créée !');
+}
+
+async function joinFamily() {
+  const code = document.getElementById('invite-code').value.trim();
+  if(!code || code.length < 20){ showToast('Code invalide'); return; }
+
+  const p = getActiveProfile();
+  p.familyId = code;
+  saveProfiles();
+  familyId = code;
+
+  document.getElementById('sync-modal').classList.remove('open');
+  document.getElementById('btn-share').style.display = 'block';
+
+  initSupabase(); // Will call syncWithRemote which pushes local-only first, then fetches
+  showToast('Famille rejointe, synchronisation…');
+}
+
+function skipSync() {
+  document.getElementById('sync-modal').classList.remove('open');
+}
+
+// ── TIMERS ────────────────────────────────────────────────────────────────────
+function startTick(id, fn){ if(ticks[id]) clearInterval(ticks[id]); ticks[id]=setInterval(fn,1000); fn(); }
+function stopTick(id){ clearInterval(ticks[id]); delete ticks[id]; }
+function stopAllTicks(){ Object.keys(ticks).forEach(stopTick); }
+
 function toggleBreast(side) {
-  if (breastActive[side]) {
-    const duration = Date.now() - breastActive[side].start;
-    const log = { type: 'feed', side, start: breastActive[side].start, end: Date.now(), duration, timestamp: Date.now() };
-    logAction(log);
+  if(breastActive[side]) {
+    const dur = Date.now() - breastActive[side].start;
+    logAction({type:'feed',side,start:breastActive[side].start,end:Date.now(),duration:dur,timestamp:Date.now()});
     stopBreastTimerLocal(side);
     setRemoteTimer('feed', side, null);
     showToast(`Tétée ${side==='left'?'gauche':'droite'} enregistrée`);
@@ -632,11 +912,11 @@ function toggleBreast(side) {
 }
 
 function activateBreastTimerLocal(side, start) {
-  breastActive[side] = { start };
+  breastActive[side] = {start};
   document.getElementById('btn-'+side).classList.add('running');
   startTick('b-'+side, () => {
     const el = document.getElementById('timer-'+side);
-    if(el) el.textContent = fmtDur(Date.now() - start);
+    if(el) el.textContent = fmtDur(Date.now()-start);
   });
   saveSession();
 }
@@ -650,12 +930,10 @@ function stopBreastTimerLocal(side) {
   saveSession();
 }
 
-// SOMMEIL
 function toggleSleep() {
-  if (sleepActive) {
-    const duration = Date.now() - sleepActive.start;
-    const log = { type: 'sleep', start: sleepActive.start, end: Date.now(), duration, timestamp: Date.now() };
-    logAction(log);
+  if(sleepActive) {
+    const dur = Date.now() - sleepActive.start;
+    logAction({type:'sleep',start:sleepActive.start,end:Date.now(),duration:dur,timestamp:Date.now()});
     stopSleepTimerLocal();
     setRemoteTimer('sleep', null, null);
     showToast('Sommeil enregistré');
@@ -668,14 +946,14 @@ function toggleSleep() {
 }
 
 function activateSleepTimerLocal(start) {
-  sleepActive = { start };
+  sleepActive = {start};
   document.getElementById('sleep-btn').classList.add('sleeping');
   document.getElementById('sleep-label').textContent = 'En train de dormir';
   document.getElementById('sleep-sub').textContent = 'Appuyer pour arrêter';
   document.getElementById('sleep-icon').textContent = '🌙';
   startTick('sleep', () => {
     const el = document.getElementById('sleep-timer');
-    if(el) el.textContent = fmtDur(Date.now() - start);
+    if(el) el.textContent = fmtDur(Date.now()-start);
   });
   saveSession();
 }
@@ -692,46 +970,54 @@ function stopSleepTimerLocal() {
   saveSession();
 }
 
-// MUTUAL EXCLUSION
 function stopAllActive(except) {
   ['left','right'].forEach(side => {
-    if(except !== side && breastActive[side]) {
-      const duration = Date.now() - breastActive[side].start;
-      logAction({ type: 'feed', side, start: breastActive[side].start, end: Date.now(), duration, timestamp: Date.now() });
+    if(except!==side && breastActive[side]) {
+      const dur = Date.now()-breastActive[side].start;
+      logAction({type:'feed',side,start:breastActive[side].start,end:Date.now(),duration:dur,timestamp:Date.now()});
       stopBreastTimerLocal(side);
       setRemoteTimer('feed', side, null);
     }
   });
-  if(except !== 'sleep' && sleepActive) {
-    const duration = Date.now() - sleepActive.start;
-    logAction({ type: 'sleep', start: sleepActive.start, end: Date.now(), duration, timestamp: Date.now() });
+  if(except!=='sleep' && sleepActive) {
+    const dur = Date.now()-sleepActive.start;
+    logAction({type:'sleep',start:sleepActive.start,end:Date.now(),duration:dur,timestamp:Date.now()});
     stopSleepTimerLocal();
     setRemoteTimer('sleep', null, null);
   }
 }
 
-// COUCHES
 function logDiaper(type) {
-  logAction({ type: 'diaper', diaperType: type, timestamp: Date.now() });
+  logAction({type:'diaper',diaperType:type,timestamp:Date.now()});
   showToast(type==='wet'?'💧 Couche pipi':'💩 Couche selle');
 }
 
-// SESSION ET FORMATAGE
-function saveSession() { localStorage.setItem('bt_session', JSON.stringify({breastActive, sleepActive})); }
-function loadSession() {
-  try{ const s = JSON.parse(localStorage.getItem('bt_session')||'null');
-    if(s){ breastActive=s.breastActive||{left:null,right:null}; sleepActive=s.sleepActive||null;}
-  }catch(e){}
+// ── SESSION ───────────────────────────────────────────────────────────────────
+function saveSession() {
+  localStorage.setItem('bt_session_'+activeProfileId, JSON.stringify({breastActive, sleepActive}));
 }
+function loadSession() {
+  try {
+    const s = JSON.parse(localStorage.getItem('bt_session_'+activeProfileId)||'null');
+    if(s){ breastActive=s.breastActive||{left:null,right:null}; sleepActive=s.sleepActive||null; }
+    else { breastActive={left:null,right:null}; sleepActive=null; }
+  } catch(e) { breastActive={left:null,right:null}; sleepActive=null; }
+}
+function restoreTimers() {
+  ['left','right'].forEach(s => { if(breastActive[s]) activateBreastTimerLocal(s, breastActive[s].start); });
+  if(sleepActive) activateSleepTimerLocal(sleepActive.start);
+}
+
+// ── UTILS ─────────────────────────────────────────────────────────────────────
 function todayLogs(){ const t=new Date().toDateString(); return allLogs.filter(l=>new Date(l.timestamp||l.start).toDateString()===t); }
-function fmtDur(ms){ const s=Math.floor(ms/1000),m=Math.floor(s/60),h=Math.floor(m/60); return h>0 ? `${h}h${String(m%60).padStart(2,'0')}` : `${String(m).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`; }
+function fmtDur(ms){ const s=Math.floor(ms/1000),m=Math.floor(s/60),h=Math.floor(m/60); return h>0?`${h}h${String(m%60).padStart(2,'0')}`:`${String(m).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`; }
 function fmtTime(ts){ return new Date(ts).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}); }
 function fmtHM(ts){ const d=new Date(ts); return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`; }
 function fmtYMD(ts){ const d=new Date(ts); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
 function fmtDayLabel(d){ const today=new Date(),yest=new Date(today);yest.setDate(today.getDate()-1); if(d.toDateString()===today.toDateString()) return "Aujourd'hui"; if(d.toDateString()===yest.toDateString()) return 'Hier'; return d.toLocaleDateString('fr-FR',{weekday:'long',day:'numeric',month:'long'}); }
 function groupByDay(logs){ const byDay={}; logs.forEach(l=>{ const key=new Date(l.timestamp||l.start).toDateString(); if(!byDay[key]) byDay[key]=[]; byDay[key].push(l); }); return Object.keys(byDay).sort((a,b)=>new Date(b)-new Date(a)).map(key=>({label:fmtDayLabel(new Date(key)),logs:byDay[key].slice().reverse()})); }
 
-// ── VUES ET RENDUS ────────────────────────────────────────────────────────────
+// ── RENDER ────────────────────────────────────────────────────────────────────
 function renderFeed(){
   const tl=todayLogs().filter(l=>l.type==='feed');
   document.getElementById('sum-feed-count').textContent=tl.length;
@@ -743,11 +1029,16 @@ function renderFeed(){
     el.textContent=fmtTime(sl[sl.length-1].start)+' · '+fmtDur(sl[sl.length-1].duration);
   });
   const el=document.getElementById('feed-history');
-  const feedLogs=allLogs.filter(l=>l.type==='feed').sort((a,b)=>(b.start||b.timestamp)-(a.start||a.timestamp));
-  if(!feedLogs.length){el.innerHTML='<div class="empty-state">Aucune tétée enregistrée</div>';return;}
-  el.innerHTML=groupByDay(feedLogs).map(g=>`
+  const logs=allLogs.filter(l=>l.type==='feed').sort((a,b)=>(b.start||b.timestamp)-(a.start||a.timestamp));
+  if(!logs.length){el.innerHTML='<div class="empty-state">Aucune tétée enregistrée</div>';return;}
+  el.innerHTML=groupByDay(logs).map(g=>`
     <div class="day-group"><div class="day-group-label">${g.label}</div><div class="history-list">
-    ${g.logs.map(l=>`<div class="history-item" onclick="openEdit('${l.id}')"><div class="h-dot ${l.side}"></div><div class="h-main"><div class="h-label">Sein ${l.side==='left'?'gauche':'droit'}</div><div class="h-range">${fmtTime(l.start)} → ${fmtTime(l.end)}</div></div><div class="h-dur">${fmtDur(l.duration)}</div><div class="h-edit-hint">✎</div></div>`).join('')}
+    ${g.logs.map(l=>`<div class="history-item${pendingSyncIds.has(l.id)?' pending':''}" onclick="openEdit('${l.id}')">
+      <div class="h-dot ${l.side}"></div>
+      <div class="h-main"><div class="h-label">Sein ${l.side==='left'?'gauche':'droit'}</div><div class="h-range">${fmtTime(l.start)} → ${fmtTime(l.end)}</div></div>
+      <div class="h-dur">${fmtDur(l.duration)}</div>
+      <div class="h-edit-hint">✎</div>
+    </div>`).join('')}
     </div></div>`).join('');
 }
 
@@ -756,10 +1047,16 @@ function renderSleep(){
   document.getElementById('sum-sleep-count').textContent=tl.length;
   document.getElementById('sum-sleep-total').textContent=Math.round(tl.reduce((a,l)=>a+(l.duration||0),0)/60000)+' min';
   const el=document.getElementById('sleep-history');
-  const sleepLogs=allLogs.filter(l=>l.type==='sleep').sort((a,b)=>(b.start||b.timestamp)-(a.start||a.timestamp));
-  if(!sleepLogs.length){el.innerHTML='<div class="empty-state">Aucun sommeil enregistré</div>';return;}
-  el.innerHTML=groupByDay(sleepLogs).map(g=>`<div class="day-group"><div class="day-group-label">${g.label}</div><div class="history-list">
-    ${g.logs.map(l=>`<div class="history-item" onclick="openEdit('${l.id}')"><div class="h-dot sleep"></div><div class="h-main"><div class="h-label">Sommeil</div><div class="h-range">${fmtTime(l.start)} → ${fmtTime(l.end)}</div></div><div class="h-dur">${fmtDur(l.duration)}</div><div class="h-edit-hint">✎</div></div>`).join('')}
+  const logs=allLogs.filter(l=>l.type==='sleep').sort((a,b)=>(b.start||b.timestamp)-(a.start||a.timestamp));
+  if(!logs.length){el.innerHTML='<div class="empty-state">Aucun sommeil enregistré</div>';return;}
+  el.innerHTML=groupByDay(logs).map(g=>`
+    <div class="day-group"><div class="day-group-label">${g.label}</div><div class="history-list">
+    ${g.logs.map(l=>`<div class="history-item${pendingSyncIds.has(l.id)?' pending':''}" onclick="openEdit('${l.id}')">
+      <div class="h-dot sleep"></div>
+      <div class="h-main"><div class="h-label">Sommeil</div><div class="h-range">${fmtTime(l.start)} → ${fmtTime(l.end)}</div></div>
+      <div class="h-dur">${fmtDur(l.duration)}</div>
+      <div class="h-edit-hint">✎</div>
+    </div>`).join('')}
     </div></div>`).join('');
 }
 
@@ -768,48 +1065,164 @@ function renderDiapers(){
   document.getElementById('diaper-wet-count').textContent=tl.filter(l=>l.diaperType==='wet').length;
   document.getElementById('diaper-dirty-count').textContent=tl.filter(l=>l.diaperType==='dirty').length;
   const el=document.getElementById('diaper-history');
-  const diaperLogs=allLogs.filter(l=>l.type==='diaper').sort((a,b)=>b.timestamp-a.timestamp);
-  if(!diaperLogs.length){el.innerHTML='<div class="empty-state">Aucun changement enregistré</div>';return;}
-  el.innerHTML=groupByDay(diaperLogs).map(g=>`<div class="day-group"><div class="day-group-label">${g.label}</div><div class="history-list">
-    ${g.logs.map(l=>`<div class="history-item" onclick="openEdit('${l.id}')"><div class="h-dot ${l.diaperType}"></div><div class="h-main"><div class="h-label">${l.diaperType==='wet'?'💧 Pipi':'💩 Selle'}</div><div class="h-range">${fmtTime(l.timestamp)}</div></div><div class="h-edit-hint">✎</div></div>`).join('')}
+  const logs=allLogs.filter(l=>l.type==='diaper').sort((a,b)=>b.timestamp-a.timestamp);
+  if(!logs.length){el.innerHTML='<div class="empty-state">Aucun changement enregistré</div>';return;}
+  el.innerHTML=groupByDay(logs).map(g=>`
+    <div class="day-group"><div class="day-group-label">${g.label}</div><div class="history-list">
+    ${g.logs.map(l=>`<div class="history-item${pendingSyncIds.has(l.id)?' pending':''}" onclick="openEdit('${l.id}')">
+      <div class="h-dot ${l.diaperType}"></div>
+      <div class="h-main"><div class="h-label">${l.diaperType==='wet'?'💧 Pipi':'💩 Selle'}</div><div class="h-range">${fmtTime(l.timestamp)}</div></div>
+      <div class="h-edit-hint">✎</div>
+    </div>`).join('')}
     </div></div>`).join('');
 }
 
-let tlDayIndex = 0, tlDays = [];
+let tlDayIndex=0, tlDays=[];
 function tlNav(delta){
-  const newIdx = tlDayIndex + delta; if(newIdx < 0 || newIdx >= tlDays.length) return;
-  const c = document.getElementById('timeline-container'); c.classList.add('swiping');
-  setTimeout(()=>{ tlDayIndex = newIdx; renderTimeline(); c.classList.remove('swiping'); }, 150);
+  const newIdx=tlDayIndex+delta; if(newIdx<0||newIdx>=tlDays.length) return;
+  const c=document.getElementById('timeline-container'); c.classList.add('swiping');
+  setTimeout(()=>{ tlDayIndex=newIdx; renderTimeline(); c.classList.remove('swiping'); },150);
 }
 function renderTimeline(){
-  const c = document.getElementById('timeline-container');
-  const byDay = {}; allLogs.forEach(l=>{ const k = new Date(l.timestamp||l.start).toDateString(); if(!byDay[k]) byDay[k]=[]; byDay[k].push(l); });
-  tlDays = Object.keys(byDay).sort((a,b) => new Date(b) - new Date(a));
-  
+  const c=document.getElementById('timeline-container');
+  const byDay={}; allLogs.forEach(l=>{ const k=new Date(l.timestamp||l.start).toDateString(); if(!byDay[k]) byDay[k]=[]; byDay[k].push(l); });
+  tlDays=Object.keys(byDay).sort((a,b)=>new Date(b)-new Date(a));
   if(!tlDays.length){ c.innerHTML='<div class="empty-state">Aucune donnée</div>'; document.getElementById('tl-nav-label').textContent='—'; return; }
-  tlDayIndex = Math.max(0, Math.min(tlDayIndex, tlDays.length - 1));
-  document.getElementById('tl-nav-label').textContent = fmtDayLabel(new Date(tlDays[tlDayIndex]));
-  document.getElementById('tl-nav-prev').disabled = (tlDayIndex >= tlDays.length - 1);
-  document.getElementById('tl-nav-next').disabled = (tlDayIndex <= 0);
-
-  const logs = byDay[tlDays[tlDayIndex]];
-  const pct = ts => +((new Date(ts).getHours()*3600 + new Date(ts).getMinutes()*60 + new Date(ts).getSeconds()) * 1000 / 86400000 * 100).toFixed(3);
-  const dpct = ms => Math.max(0.8, +(ms / 86400000 * 100).toFixed(3));
-  const ticksHtml = [0,6,12,18,24].map(h=>`<div class="tl-tick" style="left:${(h/24*100).toFixed(1)}%"><div class="tl-tick-line"></div><div class="tl-tick-lbl">${String(h).padStart(2,'0')}h</div></div>`).join('');
-  const fl=logs.filter(l=>l.type==='feed'), sl=logs.filter(l=>l.type==='sleep'), dl=logs.filter(l=>l.type==='diaper');
-
-  c.innerHTML = `<div class="timeline-day">
-    <div class="tl-body" style="padding-top:20px">
-      <div class="tl-ticks-row"><div class="tl-tick-spacer"></div><div class="tl-ticks">${ticksHtml}</div></div>
-      ${fl.length ? `<div class="tl-row"><div class="tl-row-label">🤱</div><div class="tl-track feed-track">${fl.map(l=>`<div class="tl-bar ${l.side}" style="left:${pct(l.start)}%;width:${dpct(l.duration)}%"></div>`).join('')}</div></div>` : ''}
-      ${sl.length ? `<div class="tl-row"><div class="tl-row-label">🌙</div><div class="tl-track sleep-track">${sl.map(l=>`<div class="tl-bar sleep" style="left:${pct(l.start)}%;width:${dpct(l.duration)}%"></div>`).join('')}</div></div>` : ''}
-      ${dl.length ? `<div class="tl-row"><div class="tl-row-label">💧</div><div class="tl-track diaper-track">${dl.map(l=>`<div class="tl-dot ${l.diaperType}" style="left:${pct(l.timestamp)}%"></div>`).join('')}</div></div>` : ''}
-    </div></div>`;
+  tlDayIndex=Math.max(0,Math.min(tlDayIndex,tlDays.length-1));
+  document.getElementById('tl-nav-label').textContent=fmtDayLabel(new Date(tlDays[tlDayIndex]));
+  document.getElementById('tl-nav-prev').disabled=(tlDayIndex>=tlDays.length-1);
+  document.getElementById('tl-nav-next').disabled=(tlDayIndex<=0);
+  const logs=byDay[tlDays[tlDayIndex]];
+  const pct=ts=>+((new Date(ts).getHours()*3600+new Date(ts).getMinutes()*60+new Date(ts).getSeconds())*1000/86400000*100).toFixed(3);
+  const dpct=ms=>Math.max(0.8,+(ms/86400000*100).toFixed(3));
+  const ticksHtml=[0,6,12,18,24].map(h=>`<div class="tl-tick" style="left:${(h/24*100).toFixed(1)}%"><div class="tl-tick-line"></div><div class="tl-tick-lbl">${String(h).padStart(2,'0')}h</div></div>`).join('');
+  const fl=logs.filter(l=>l.type==='feed'),sl=logs.filter(l=>l.type==='sleep'),dl=logs.filter(l=>l.type==='diaper');
+  c.innerHTML=`<div class="timeline-day"><div class="tl-body" style="padding-top:20px">
+    <div class="tl-ticks-row"><div class="tl-tick-spacer"></div><div class="tl-ticks">${ticksHtml}</div></div>
+    ${fl.length?`<div class="tl-row"><div class="tl-row-label">🤱</div><div class="tl-track feed-track">${fl.map(l=>`<div class="tl-bar ${l.side}" style="left:${pct(l.start)}%;width:${dpct(l.duration)}%"></div>`).join('')}</div></div>`:''}
+    ${sl.length?`<div class="tl-row"><div class="tl-row-label">🌙</div><div class="tl-track sleep-track">${sl.map(l=>`<div class="tl-bar sleep" style="left:${pct(l.start)}%;width:${dpct(l.duration)}%"></div>`).join('')}</div></div>`:''}
+    ${dl.length?`<div class="tl-row"><div class="tl-row-label">💧</div><div class="tl-track diaper-track">${dl.map(l=>`<div class="tl-dot ${l.diaperType}" style="left:${pct(l.timestamp)}%"></div>`).join('')}</div></div>`:''}
+  </div></div>`;
 }
 
 function renderAll(){ renderFeed(); renderSleep(); renderDiapers(); if(currentTab==='timeline') renderTimeline(); }
 
-// ── PARTAGE (Modal) ───────────────────────────────────────────────────────────
+// ── PROFILE MODAL ─────────────────────────────────────────────────────────────
+function openProfileModal() {
+  renderProfileList();
+  document.getElementById('profile-form').style.display = 'none';
+  document.getElementById('profile-modal').classList.add('open');
+}
+function closeProfileModal(e) {
+  if(e && e.target !== document.getElementById('profile-modal')) return;
+  document.getElementById('profile-modal').classList.remove('open');
+}
+
+function renderProfileList() {
+  const el = document.getElementById('profile-list');
+  el.innerHTML = profiles.map(p => `
+    <div class="profile-item ${p.id===activeProfileId?'active-profile':''}" onclick="switchToProfile('${p.id}')">
+      <div class="profile-item-emoji">${p.emoji}</div>
+      <div class="profile-item-info">
+        <div class="profile-item-name">${p.name}</div>
+        <div class="profile-item-sub">${p.familyId?'Synchronisé':'Local uniquement'}</div>
+      </div>
+      ${p.id===activeProfileId?'<div class="profile-item-badge">Actif</div>':''}
+      <button class="profile-item-edit" onclick="event.stopPropagation();openEditProfile('${p.id}')">✎</button>
+    </div>`).join('');
+}
+
+async function switchToProfile(profileId) {
+  if(profileId === activeProfileId) { closeProfileModal(); return; }
+  // Stop all active timers before switching
+  stopAllActive('__none__');
+  stopAllTicks();
+
+  // Save session for current profile
+  saveSession();
+
+  // Switch
+  activeProfileId = profileId;
+  saveProfiles();
+  familyId = getActiveProfile().familyId;
+
+  updateHeaderProfile();
+  document.getElementById('profile-modal').classList.remove('open');
+
+  // Reinit Supabase for new profile
+  supabaseClient = null;
+  breastActive = {left:null,right:null};
+  sleepActive = null;
+
+  await loadProfileData();
+
+  document.getElementById('btn-share').style.display = familyId ? 'block' : 'none';
+
+  if(familyId) {
+    initSupabase();
+  } else {
+    document.getElementById('sync-modal').classList.add('open');
+  }
+  showToast('Profil : ' + getActiveProfile().name);
+}
+
+function openAddProfileForm() {
+  editingProfileId = null;
+  document.getElementById('pf-name').value = '';
+  renderEmojiGrid('👶');
+  document.getElementById('profile-form').style.display = 'block';
+  // Change save button label
+  document.querySelector('#profile-form .btn-save').textContent = 'Créer';
+}
+
+function openEditProfile(profileId) {
+  editingProfileId = profileId;
+  const p = profiles.find(x => x.id === profileId);
+  if(!p) return;
+  document.getElementById('pf-name').value = p.name;
+  renderEmojiGrid(p.emoji);
+  document.getElementById('profile-form').style.display = 'block';
+  document.querySelector('#profile-form .btn-save').textContent = 'Enregistrer';
+}
+
+function renderEmojiGrid(selected) {
+  const el = document.getElementById('emoji-grid');
+  el.innerHTML = EMOJIS.map(e => `<div class="emoji-opt${e===selected?' selected':''}" onclick="selectEmoji('${e}',this)">${e}</div>`).join('');
+}
+
+function selectEmoji(e, el) {
+  document.querySelectorAll('.emoji-opt').forEach(x => x.classList.remove('selected'));
+  el.classList.add('selected');
+}
+
+function closeProfileForm() {
+  document.getElementById('profile-form').style.display = 'none';
+  editingProfileId = null;
+}
+
+async function saveProfile() {
+  const name = document.getElementById('pf-name').value.trim();
+  if(!name){ showToast('Entre un prénom'); return; }
+  const emojiEl = document.querySelector('.emoji-opt.selected');
+  const emoji = emojiEl ? emojiEl.textContent : '👶';
+
+  if(editingProfileId) {
+    const p = profiles.find(x => x.id === editingProfileId);
+    if(p){ p.name = name; p.emoji = emoji; }
+    saveProfiles();
+    if(editingProfileId === activeProfileId) updateHeaderProfile();
+    showToast('Profil mis à jour');
+  } else {
+    const p = {id: crypto.randomUUID(), name, emoji, familyId: null};
+    profiles.push(p);
+    saveProfiles();
+    showToast('Profil créé');
+  }
+  closeProfileForm();
+  renderProfileList();
+}
+
+// ── SHARE MODAL ───────────────────────────────────────────────────────────────
 function openShareModal() {
   const url = window.location.origin + window.location.pathname + '?invite=' + familyId;
   document.getElementById('qr-code').src = `https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(url)}`;
@@ -825,44 +1238,44 @@ function copyShareLink() {
   showToast('Lien copié !');
 }
 
-// ── MODIFICATION / SUPPRESSION ────────────────────────────────────────────────
+// ── EDIT MODAL ────────────────────────────────────────────────────────────────
 function openEdit(id) {
-  editingLog = allLogs.find(l => l.id === id || l.id === parseInt(id));
+  editingLog = allLogs.find(l => l.id === id);
   if(!editingLog) return;
   const b = document.getElementById('modal-body');
-  if(editingLog.type === 'diaper'){
-    b.innerHTML = `<div class="modal-row"><div class="modal-field"><label>Date</label><input type="date" id="ed-d" value="${fmtYMD(editingLog.timestamp)}"/></div><div class="modal-field"><label>Heure</label><input type="time" id="ed-t" value="${fmtHM(editingLog.timestamp)}"/></div></div>`;
+  if(editingLog.type==='diaper'){
+    b.innerHTML=`<div class="modal-row"><div class="modal-field"><label>Date</label><input type="date" id="ed-d" value="${fmtYMD(editingLog.timestamp)}"/></div><div class="modal-field"><label>Heure</label><input type="time" id="ed-t" value="${fmtHM(editingLog.timestamp)}"/></div></div>`;
   } else {
-    b.innerHTML = `<div class="modal-row"><div class="modal-field"><label>Début Date</label><input type="date" id="es-d" value="${fmtYMD(editingLog.start)}"/></div><div class="modal-field"><label>Début Heure</label><input type="time" id="es-t" value="${fmtHM(editingLog.start)}"/></div></div>
-                   <div class="modal-row"><div class="modal-field"><label>Fin Date</label><input type="date" id="ee-d" value="${fmtYMD(editingLog.end)}"/></div><div class="modal-field"><label>Fin Heure</label><input type="time" id="ee-t" value="${fmtHM(editingLog.end)}"/></div></div>`;
+    b.innerHTML=`<div class="modal-row"><div class="modal-field"><label>Début Date</label><input type="date" id="es-d" value="${fmtYMD(editingLog.start)}"/></div><div class="modal-field"><label>Début Heure</label><input type="time" id="es-t" value="${fmtHM(editingLog.start)}"/></div></div>
+    <div class="modal-row"><div class="modal-field"><label>Fin Date</label><input type="date" id="ee-d" value="${fmtYMD(editingLog.end)}"/></div><div class="modal-field"><label>Fin Heure</label><input type="time" id="ee-t" value="${fmtHM(editingLog.end)}"/></div></div>`;
   }
   document.getElementById('modal-overlay').classList.add('open');
 }
 function closeEditModal(e){
-  if(e && e.target !== document.getElementById('modal-overlay')) return;
-  document.getElementById('modal-overlay').classList.remove('open'); editingLog = null;
+  if(e && e.target!==document.getElementById('modal-overlay')) return;
+  document.getElementById('modal-overlay').classList.remove('open'); editingLog=null;
 }
-function saveEntry() {
+function saveEntry(){
   if(!editingLog) return;
-  const combine = (d, t) => { const [y,m,d_] = d.split('-').map(Number), [h,min] = t.split(':').map(Number); return new Date(y, m-1, d_, h, min).getTime(); };
-  if(editingLog.type === 'diaper') {
-    editingLog.timestamp = combine(document.getElementById('ed-d').value, document.getElementById('ed-t').value);
+  const combine=(d,t)=>{ const[y,m,d_]=d.split('-').map(Number),[h,min]=t.split(':').map(Number); return new Date(y,m-1,d_,h,min).getTime(); };
+  if(editingLog.type==='diaper'){
+    editingLog.timestamp=combine(document.getElementById('ed-d').value,document.getElementById('ed-t').value);
   } else {
-    editingLog.start = combine(document.getElementById('es-d').value, document.getElementById('es-t').value);
-    editingLog.end = combine(document.getElementById('ee-d').value, document.getElementById('ee-t').value);
-    editingLog.duration = editingLog.end - editingLog.start;
-    editingLog.timestamp = editingLog.end;
+    editingLog.start=combine(document.getElementById('es-d').value,document.getElementById('es-t').value);
+    editingLog.end=combine(document.getElementById('ee-d').value,document.getElementById('ee-t').value);
+    editingLog.duration=editingLog.end-editingLog.start;
+    editingLog.timestamp=editingLog.end;
   }
   updateLogAction(editingLog);
   closeEditModal(); showToast('Modifié !');
 }
 function deleteEntry(){
-  if(!editingLog || !confirm('Supprimer cet événement ?')) return;
+  if(!editingLog||!confirm('Supprimer cet événement ?')) return;
   deleteLogAction(editingLog.id);
   closeEditModal(); showToast('Supprimé');
 }
 
-// ── UTILITAIRES ───────────────────────────────────────────────────────────────
+// ── UI ────────────────────────────────────────────────────────────────────────
 function switchTab(name){
   ['feed','sleep','diaper','timeline'].forEach(t=>{
     document.getElementById('section-'+t).classList.toggle('active',t===name);
@@ -879,13 +1292,32 @@ function exportCSV(){
   const rows=[['date','heure','type','detail','duree_min']];
   [...allLogs].sort((a,b)=>(a.timestamp||a.start)-(b.timestamp||b.start)).forEach(l=>{
     const ts=l.timestamp||l.start;
-    rows.push([new Date(ts).toLocaleDateString('fr-FR'), fmtTime(ts), l.type==='feed'?'allaitement':l.type==='sleep'?'sommeil':'couche', l.type==='feed'?(l.side==='left'?'gauche':'droit'):l.type==='diaper'?(l.diaperType==='wet'?'pipi':'selle'):'', l.duration?Math.round(l.duration/60000):'']);
+    rows.push([new Date(ts).toLocaleDateString('fr-FR'),fmtTime(ts),l.type==='feed'?'allaitement':l.type==='sleep'?'sommeil':'couche',l.type==='feed'?(l.side==='left'?'gauche':'droit'):l.type==='diaper'?(l.diaperType==='wet'?'pipi':'selle'):'',l.duration?Math.round(l.duration/60000):'']);
   });
-  const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob(['\uFEFF'+rows.map(r=>r.join(',')).join('\n')],{type:'text/csv;charset=utf-8;'})); a.download=`babytrack.csv`; a.click(); showToast('Export CSV téléchargé !');
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob(['\uFEFF'+rows.map(r=>r.join(',')).join('\n')],{type:'text/csv;charset=utf-8;'}));
+  a.download=`babytrack-${getActiveProfile().name}.csv`; a.click();
+  showToast('Export CSV téléchargé !');
 }
 
-// Gestion des appuis background et offline
-document.addEventListener('visibilitychange',()=>{ if(!document.hidden) { ['left','right'].forEach(s=>{ if(breastActive[s]) activateBreastTimerLocal(s, breastActive[s].start); }); if(sleepActive) activateSleepTimerLocal(sleepActive.start); } else { stopAllTicks(); } });
+// Visibility change: restart local ticks
+document.addEventListener('visibilitychange',()=>{
+  if(!document.hidden){
+    ['left','right'].forEach(s=>{ if(breastActive[s]) activateBreastTimerLocal(s, breastActive[s].start); });
+    if(sleepActive) activateSleepTimerLocal(sleepActive.start);
+    // Try to push any pending items when app comes back to foreground
+    if(pendingSyncIds.size > 0 && navigator.onLine && supabaseClient) {
+      const toRetry = allLogs.filter(l => pendingSyncIds.has(l.id));
+      if(toRetry.length > 0) {
+        supabaseClient.from('logs').upsert(toRetry.map(l=>({...l,family_id:familyId}))).then(({error})=>{
+          if(!error) { pendingSyncIds.clear(); renderAll(); }
+        });
+      }
+    }
+  } else {
+    stopAllTicks();
+  }
+});
 
 if('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(()=>{});
 </script>
