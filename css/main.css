@@ -1,6 +1,6 @@
 /* ── RESET & VARS ── */
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-html{height:100%;overscroll-behavior:none}
+html{height:100%}
 
 :root{
   --pink:#e8649a;--pink-light:#fdf0f6;--pink-mid:#f7d6e8;
@@ -21,7 +21,7 @@ body{
   background:var(--bg);color:var(--text);
   height:100dvh;height:100vh;height:100dvh;
   display:flex;flex-direction:column;
-  overflow:hidden;overscroll-behavior-y:none;
+  overflow:hidden;
   -webkit-tap-highlight-color:transparent;
 }
 
@@ -60,7 +60,7 @@ body{
 .content{
   flex:1;overflow-y:auto;overflow-x:hidden;
   -webkit-overflow-scrolling:touch;
-  padding:16px;overscroll-behavior-y:contain;
+  padding:16px;
   padding-bottom:calc(16px + var(--tab-h) + var(--sab));
 }
 
@@ -311,3 +311,10 @@ body{
 /* ── ANIMATIONS ── */
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.55}}
 .running .b-timer,.sleeping .sleep-timer{animation:pulse 2s infinite}
+
+/* ── MODE PWA (Installée sur l'écran d'accueil) ── */
+@media (display-mode: standalone), (display-mode: fullscreen) {
+  html { overscroll-behavior: none; }
+  body { overscroll-behavior-y: none; }
+  .content { overscroll-behavior-y: contain; }
+}

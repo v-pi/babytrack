@@ -655,4 +655,36 @@ document.addEventListener('visibilitychange', () => {
   }
 });
 
+// ── GESTION DU SWIPE (TIMELINE) ───────────────────────────────────────────────
+let touchStartX = 0;
+let touchEndX = 0;
+
+const timelineSection = document.getElementById('section-timeline');
+
+if (timelineSection) {
+  // Quand le doigt touche l'écran, on enregistre la position X de départ
+  timelineSection.addEventListener('touchstart', e => {
+    touchStartX = e.changedTouches[0].screenX;
+  }, { passive: true });
+
+  // Quand le doigt quitte l'écran, on enregistre la position X de fin
+  timelineSection.addEventListener('touchend', e => {
+    touchEndX = e.changedTouches[0].screenX;
+    handleSwipe();
+  }, { passive: true });
+}
+
+function handleSwipe() {
+  const swipeDistance = touchEndX - touchStartX;
+  const threshold = 50; // Distance minimum (en pixels) pour valider le geste
+
+  if (swipeDistance < -threshold) {
+    // Glissement vers la gauche (←) : on va vers le jour plus récent (›)
+    tlNav(-1);
+  } else if (swipeDistance > threshold) {
+    // Glissement vers la droite (→) : on va vers le jour plus ancien (‹)
+    tlNav(+1);
+  }
+}
+
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(() => {});
