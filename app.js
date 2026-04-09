@@ -1,0 +1,394 @@
+// ── app.js ────────────────────────────────────────────────────────────────────
+// Orchestration: init, timer toggle handlers, tab/UI management, modals, events.
+// Depends on state.js, render.js, utils.js, db.js, sync.js.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// ── INIT ─────────────────────────────────────────────────────────────────────
+window.onload = async () => {
+  document.getElementById('today-date').textContent =
+    new Date().toLocaleDateString('fr-FR', { weekday:'short', day:'numeric', month:'short' });
+
+  await openDB();
+  loadProfiles();
+  updateHeaderProfile();
+
+  // Restore last active tab (survives F5, not shared between tabs)
+  const savedTab = sessionStorage.getItem('bt_tab') || 'feed';
+  switchTab(savedTab, true);   // true = silent, skip early timeline render
+
+  // Handle invite link (?invite=<familyId>)
+  const params = new URLSearchParams(window.location.search);
+  const invite = params.get('invite');
+  if (invite && invite.length > 20) {
+    const p = getActiveProfile();
+    p.familyId = invite;
+    saveProfiles();
+    window.history.replaceState({}, document.title, window.location.pathname);
+    showToast("Lien d'invitation détecté !");
+  }
+
+  await loadProfileData();
+  familyId = getActiveProfile().familyId;
+
+  if (!familyId) {
+    document.getElementById('sync-modal').classList.add('open');
+  } else {
+    document.getElementById('btn-share').style.display = 'block';
+    initSupabase();
+  }
+
+  window.addEventListener('online',  () => {
+    setSyncDot('syncing');
+    setTimeout(() => { if (supabaseClient) syncWithRemote(); else if (familyId) initSupabase(); }, 800);
+  });
+  window.addEventListener('offline', () => setSyncDot('error'));
+};
+
+async function loadProfileData() {
+  allLogs = await dbGetAll();
+  loadSession();
+  renderAll();
+  restoreTimers();
+}
+
+// ── TIMERS ────────────────────────────────────────────────────────────────────
+function restoreTimers() {
+  ['left','right'].forEach(s => { if (breastActive[s]) activateBreastTimerLocal(s, breastActive[s].start); });
+  if (sleepActive) activateSleepTimerLocal(sleepActive.start);
+}
+
+function toggleBreast(side) {
+  if (breastActive[side]) {
+    const dur = Date.now() - breastActive[side].start;
+    logAction({ type:'feed', side, start:breastActive[side].start, end:Date.now(), duration:dur, timestamp:Date.now() });
+    stopBreastTimerLocal(side);
+    setRemoteTimer('feed', side, null);
+    showToast(`Tétée ${side==='left'?'gauche':'droite'} enregistrée`);
+  } else {
+    stopAllActive(side);
+    const start = Date.now();
+    activateBreastTimerLocal(side, start);
+    setRemoteTimer('feed', side, start);
+  }
+}
+
+function activateBreastTimerLocal(side, start) {
+  breastActive[side] = { start };
+  document.getElementById('btn-'+side).classList.add('running');
+  startTick('b-'+side, () => {
+    const el = document.getElementById('timer-'+side);
+    if (el) el.textContent = fmtDur(Date.now() - start);
+  });
+  saveSession();
+}
+
+function stopBreastTimerLocal(side) {
+  breastActive[side] = null;
+  document.getElementById('btn-'+side).classList.remove('running');
+  stopTick('b-'+side);
+  const el = document.getElementById('timer-'+side);
+  if (el) el.textContent = '00:00';
+  saveSession();
+}
+
+function toggleSleep() {
+  if (sleepActive) {
+    const dur = Date.now() - sleepActive.start;
+    logAction({ type:'sleep', start:sleepActive.start, end:Date.now(), duration:dur, timestamp:Date.now() });
+    stopSleepTimerLocal();
+    setRemoteTimer('sleep', null, null);
+    showToast('Sommeil enregistré');
+  } else {
+    stopAllActive('sleep');
+    const start = Date.now();
+    activateSleepTimerLocal(start);
+    setRemoteTimer('sleep', null, start);
+  }
+}
+
+function activateSleepTimerLocal(start) {
+  sleepActive = { start };
+  document.getElementById('sleep-btn').classList.add('sleeping');
+  document.getElementById('sleep-label').textContent = 'En train de dormir';
+  document.getElementById('sleep-sub').textContent   = 'Appuyer pour arrêter';
+  document.getElementById('sleep-icon').textContent  = '🌙';
+  startTick('sleep', () => {
+    const el = document.getElementById('sleep-timer');
+    if (el) el.textContent = fmtDur(Date.now() - start);
+  });
+  saveSession();
+}
+
+function stopSleepTimerLocal() {
+  sleepActive = null;
+  document.getElementById('sleep-btn').classList.remove('sleeping');
+  document.getElementById('sleep-label').textContent = 'Début du sommeil';
+  document.getElementById('sleep-sub').textContent   = 'Appuyer pour commencer';
+  document.getElementById('sleep-icon').textContent  = '😴';
+  const el = document.getElementById('sleep-timer');
+  if (el) el.textContent = '--:--';
+  stopTick('sleep');
+  saveSession();
+}
+
+// ── TABS ─────────────────────────────────────────────────────────────────────
+/**
+ * @param {string} name - tab name
+ * @param {boolean} [silent] - skip timeline render (used at init)
+ */
+function switchTab(name, silent) {
+  ['feed','sleep','diaper','timeline'].forEach(t => {
+    document.getElementById('section-'+t).classList.toggle('active', t === name);
+    document.getElementById('tab-'+t).classList.toggle('active', t === name);
+  });
+  currentTab = name;
+  sessionStorage.setItem('bt_tab', name);
+  // Always scroll to top so pull-to-refresh works on every tab
+  document.querySelector('.content').scrollTop = 0;
+  if (!silent && name === 'timeline') renderTimeline();
+}
+
+// ── TOAST ─────────────────────────────────────────────────────────────────────
+function showToast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  clearTimeout(toastTO);
+  toastTO = setTimeout(() => el.classList.remove('show'), 2500);
+}
+
+// ── EXPORT ───────────────────────────────────────────────────────────────────
+function exportCSV() {
+  if (!allLogs.length) { showToast('Rien à exporter'); return; }
+  const rows = [['date','heure','type','detail','duree']];
+  [...allLogs].sort((a,b) => (a.timestamp||a.start)-(b.timestamp||b.start)).forEach(l => {
+    const ts = l.timestamp || l.start;
+    rows.push([
+      new Date(ts).toLocaleDateString('fr-FR'), fmtTime(ts),
+      l.type==='feed'?'allaitement':l.type==='sleep'?'sommeil':'couche',
+      l.type==='feed'?(l.side==='left'?'gauche':'droit'):l.type==='diaper'?(l.diaperType==='wet'?'pipi':'selle'):'',
+      l.duration ? fmtDur(l.duration) : ''
+    ]);
+  });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob(['\uFEFF'+rows.map(r=>r.join(',')).join('\n')], {type:'text/csv;charset=utf-8;'}));
+  a.download = `babytrack-${getActiveProfile().name}.csv`;
+  a.click();
+  showToast('Export CSV téléchargé !');
+}
+
+// ── PROFILE MODAL ─────────────────────────────────────────────────────────────
+function openProfileModal() {
+  renderProfileList();
+  document.getElementById('profile-form').style.display = 'none';
+  document.getElementById('profile-modal').classList.add('open');
+}
+function closeProfileModal(e) {
+  if (e && e.target !== document.getElementById('profile-modal')) return;
+  document.getElementById('profile-modal').classList.remove('open');
+}
+
+async function switchToProfile(profileId) {
+  if (profileId === activeProfileId) { closeProfileModal(); return; }
+  stopAllActive('__none__'); stopAllTicks(); saveSession();
+  activeProfileId = profileId; saveProfiles();
+  familyId = getActiveProfile().familyId;
+  updateHeaderProfile();
+  document.getElementById('profile-modal').classList.remove('open');
+  supabaseClient = null; breastActive = {left:null,right:null}; sleepActive = null;
+  await loadProfileData();
+  document.getElementById('btn-share').style.display = familyId ? 'block' : 'none';
+  if (familyId) initSupabase();
+  else document.getElementById('sync-modal').classList.add('open');
+  showToast('Profil : ' + getActiveProfile().name);
+}
+
+function openAddProfileForm() {
+  editingProfileId = null;
+  document.getElementById('pf-name').value = '';
+  renderEmojiGrid('👶');
+  document.getElementById('profile-form').style.display = 'block';
+  document.querySelector('#profile-form .btn-save').textContent = 'Créer';
+}
+
+function openEditProfile(profileId) {
+  editingProfileId = profileId;
+  const p = profiles.find(x => x.id === profileId);
+  if (!p) return;
+  document.getElementById('pf-name').value = p.name;
+  renderEmojiGrid(p.emoji);
+  document.getElementById('profile-form').style.display = 'block';
+  document.querySelector('#profile-form .btn-save').textContent = 'Enregistrer';
+}
+
+function selectEmoji(e, el) {
+  document.querySelectorAll('.emoji-opt').forEach(x => x.classList.remove('selected'));
+  el.classList.add('selected');
+}
+
+function closeProfileForm() {
+  document.getElementById('profile-form').style.display = 'none';
+  editingProfileId = null;
+}
+
+async function saveProfile() {
+  const name = document.getElementById('pf-name').value.trim();
+  if (!name) { showToast('Entre un prénom'); return; }
+  const emojiEl = document.querySelector('.emoji-opt.selected');
+  const emoji   = emojiEl ? emojiEl.textContent : '👶';
+  if (editingProfileId) {
+    const p = profiles.find(x => x.id === editingProfileId);
+    if (p) { p.name = name; p.emoji = emoji; }
+    saveProfiles();
+    if (editingProfileId === activeProfileId) {
+      updateHeaderProfile();
+      pushBabyNameToRemote(); // sync name+emoji to Supabase families table
+    }
+    showToast('Profil mis à jour');
+  } else {
+    profiles.push({ id: crypto.randomUUID(), name, emoji, familyId: null });
+    saveProfiles();
+    showToast('Profil créé');
+  }
+  closeProfileForm();
+  renderProfileList();
+}
+
+// ── RESET ─────────────────────────────────────────────────────────────────────
+function confirmReset() {
+  if (!confirm(`Supprimer TOUTES les données de ${getActiveProfile().name} ? Cette action est irréversible.`)) return;
+  resetCurrentProfile();
+}
+
+async function resetCurrentProfile() {
+  stopAllActive('__none__'); stopAllTicks();
+  if (supabaseClient && navigator.onLine && familyId) {
+    setSyncDot('syncing');
+    await supabaseClient.from('logs').delete().eq('family_id', familyId);
+    await supabaseClient.from('active_timers').delete().eq('family_id', familyId);
+  }
+  await dbClear();
+  allLogs = []; breastActive = {left:null,right:null}; sleepActive = null;
+  localStorage.removeItem('bt_session_'+activeProfileId);
+  renderAll();
+  document.getElementById('profile-modal').classList.remove('open');
+  setSyncDot('');
+  showToast('Données effacées');
+}
+
+// ── SHARE MODAL ───────────────────────────────────────────────────────────────
+function openShareModal() {
+  const url = window.location.origin + window.location.pathname + '?invite=' + familyId;
+  document.getElementById('qr-code').src = `https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(url)}`;
+  document.getElementById('share-link-input').value = url;
+  document.getElementById('share-modal').classList.add('open');
+}
+function closeShareModal(e) {
+  if (e && e.target !== document.getElementById('share-modal')) return;
+  document.getElementById('share-modal').classList.remove('open');
+}
+function copyShareLink() {
+  navigator.clipboard.writeText(document.getElementById('share-link-input').value);
+  showToast('Lien copié !');
+}
+
+// ── EDIT MODAL ────────────────────────────────────────────────────────────────
+function openEdit(id) {
+  editingLog = allLogs.find(l => l.id === id);
+  if (!editingLog) return;
+  const b = document.getElementById('modal-body');
+  if (editingLog.type === 'diaper') {
+    b.innerHTML = `<div class="modal-row">
+      <div class="modal-field"><label>Date</label><input type="date" id="ed-d" value="${fmtYMD(editingLog.timestamp)}"/></div>
+      <div class="modal-field"><label>Heure</label><input type="time" id="ed-t" value="${fmtHM(editingLog.timestamp)}"/></div>
+    </div>`;
+  } else {
+    b.innerHTML = `<div class="modal-row">
+      <div class="modal-field"><label>Début Date</label><input type="date" id="es-d" value="${fmtYMD(editingLog.start)}"/></div>
+      <div class="modal-field"><label>Début Heure</label><input type="time" id="es-t" value="${fmtHM(editingLog.start)}"/></div>
+    </div><div class="modal-row">
+      <div class="modal-field"><label>Fin Date</label><input type="date" id="ee-d" value="${fmtYMD(editingLog.end)}"/></div>
+      <div class="modal-field"><label>Fin Heure</label><input type="time" id="ee-t" value="${fmtHM(editingLog.end)}"/></div>
+    </div>`;
+  }
+  document.getElementById('modal-overlay').classList.add('open');
+}
+function closeEditModal(e) {
+  if (e && e.target !== document.getElementById('modal-overlay')) return;
+  document.getElementById('modal-overlay').classList.remove('open');
+  editingLog = null;
+}
+function saveEntry() {
+  if (!editingLog) return;
+  if (editingLog.type === 'diaper') {
+    editingLog.timestamp = combineDateTime(document.getElementById('ed-d').value, document.getElementById('ed-t').value);
+  } else {
+    editingLog.start     = combineDateTime(document.getElementById('es-d').value, document.getElementById('es-t').value);
+    editingLog.end       = combineDateTime(document.getElementById('ee-d').value, document.getElementById('ee-t').value);
+    editingLog.duration  = editingLog.end - editingLog.start;
+    editingLog.timestamp = editingLog.end;
+  }
+  updateLogAction(editingLog);
+  closeEditModal(); showToast('Modifié !');
+}
+function deleteEntry() {
+  if (!editingLog || !confirm('Supprimer cet événement ?')) return;
+  deleteLogAction(editingLog.id);
+  closeEditModal(); showToast('Supprimé');
+}
+
+// ── VISIBILITY CHANGE ─────────────────────────────────────────────────────────
+// Restart ticks and re-sync with remote when the user comes back to the tab.
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) {
+    ['left','right'].forEach(s => { if (breastActive[s]) activateBreastTimerLocal(s, breastActive[s].start); });
+    if (sleepActive) activateSleepTimerLocal(sleepActive.start);
+    startLastFeedTick();
+    // Re-sync timers + logs when waking from sleep/tab switch
+    if (supabaseClient && navigator.onLine) syncWithRemote();
+    // Retry any previously failed uploads
+    if (pendingSyncIds.size > 0 && navigator.onLine && supabaseClient) {
+      const toRetry = allLogs.filter(l => pendingSyncIds.has(l.id));
+      if (toRetry.length > 0)
+        supabaseClient.from('logs')
+          .upsert(toRetry.map(l => ({ ...l, family_id: familyId })))
+          .then(({ error }) => { if (!error) { pendingSyncIds.clear(); renderAll(); } });
+    }
+  } else {
+    stopAllTicks();
+  }
+});
+
+// ── PULL-TO-REFRESH ───────────────────────────────────────────────────────────
+// Triggers syncWithRemote() on pull-down while scrolled to top (all tabs).
+(function setupPTR() {
+  const content = document.querySelector('.content');
+  let startY = 0, pulling = false;
+  content.addEventListener('touchstart', e => {
+    if (content.scrollTop === 0) { startY = e.touches[0].clientY; pulling = true; }
+    else pulling = false;
+  }, { passive: true });
+  content.addEventListener('touchend', e => {
+    if (!pulling) return;
+    pulling = false;
+    const dy = e.changedTouches[0].clientY - startY;
+    if (dy > 65 && supabaseClient && navigator.onLine) {
+      showToast('Synchronisation…');
+      syncWithRemote();
+    }
+  }, { passive: true });
+})();
+
+// ── SWIPE (TIMELINE only) ─────────────────────────────────────────────────────
+(function setupSwipe() {
+  const section = document.getElementById('section-timeline');
+  let startX = 0;
+  section.addEventListener('touchstart', e => { startX = e.changedTouches[0].screenX; }, { passive: true });
+  section.addEventListener('touchend',   e => {
+    const dx = e.changedTouches[0].screenX - startX;
+    if (Math.abs(dx) > 50) tlNav(dx > 0 ? +1 : -1);
+  }, { passive: true });
+})();
+
+// ── SERVICE WORKER ────────────────────────────────────────────────────────────
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(() => {});

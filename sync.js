@@ -1,8 +1,8 @@
-// ── js/sync.js ───────────────────────────────────────────────────────────────
+// ── sync.js ───────────────────────────────────────────────────────────────────
 // All Supabase interactions: init, full sync, realtime channels, timer remote
-// ops, baby-name sync via the `families` table.
+// ops, baby-name/emoji sync via the `families` table.
 //
-// Depends on globals from app.js:
+// Depends on globals from state.js:
 //   familyId, activeProfileId, allLogs, pendingSyncIds,
 //   breastActive, sleepActive,
 //   activateBreastTimerLocal, stopBreastTimerLocal,
@@ -35,8 +35,8 @@ async function syncWithRemote() {
     const remoteIdSet = new Set((remoteIds || []).map(r => r.id));
     const localOnly = allLogs.filter(l => !remoteIdSet.has(l.id));
     if (localOnly.length > 0) {
-      const toInsert = localOnly.map(l => ({ ...l, family_id: familyId }));
-      const { error } = await supabaseClient.from('logs').upsert(toInsert);
+      const { error } = await supabaseClient.from('logs')
+        .upsert(localOnly.map(l => ({ ...l, family_id: familyId })));
       if (!error) localOnly.forEach(l => pendingSyncIds.delete(l.id));
     }
 
@@ -51,10 +51,10 @@ async function syncWithRemote() {
       for (const l of data) await dbPut(l);
     }
 
-    // 3. Sync active timers
+    // 3. Sync active timers (keeps sleep/feed state in sync across browsers)
     await syncTimersFromRemote();
 
-    // 4. Sync baby name/emoji from families table
+    // 4. Sync baby name + emoji from families table
     await syncBabyNameFromRemote();
 
     setSyncDot('ok');
@@ -74,16 +74,12 @@ async function syncTimersFromRemote() {
 
   ['left', 'right'].forEach(side => {
     const a = timers.find(t => t.type === 'feed' && t.side === side);
-    if (a && !breastActive[side]) {
-      // start_time may be ISO string or number — normalise to ms
-      activateBreastTimerLocal(side, toMs(a.start_time));
-    } else if (!a && breastActive[side]) {
-      stopBreastTimerLocal(side);
-    }
+    if (a && !breastActive[side]) activateBreastTimerLocal(side, toMs(a.start_time));
+    else if (!a && breastActive[side]) stopBreastTimerLocal(side);
   });
   const sa = timers.find(t => t.type === 'sleep');
-  if (sa && !sleepActive)      activateSleepTimerLocal(toMs(sa.start_time));
-  else if (!sa && sleepActive) stopSleepTimerLocal();
+  if (sa && !sleepActive)       activateSleepTimerLocal(toMs(sa.start_time));
+  else if (!sa && sleepActive)  stopSleepTimerLocal();
 }
 
 /** Upsert or delete a timer row on Supabase. */
@@ -91,7 +87,7 @@ async function setRemoteTimer(type, side, startTime) {
   if (!supabaseClient || !navigator.onLine || !familyId) return;
   if (startTime !== null) {
     await supabaseClient.from('active_timers').upsert({
-      family_id: familyId, type, side, start_time: startTime
+      family_id: familyId, type, side: side || null, start_time: startTime
     });
   } else {
     let q = supabaseClient.from('active_timers')
@@ -101,10 +97,11 @@ async function setRemoteTimer(type, side, startTime) {
   }
 }
 
-// ── BABY NAME SYNC ───────────────────────────────────────────────────────────
+// ── BABY NAME / EMOJI SYNC ───────────────────────────────────────────────────
 /**
- * Push the active profile's name + emoji into the `families` table row.
+ * Push the active profile's name + emoji into the `families` table.
  * Called after every profile save and on createFamily.
+ * Requires baby_name and baby_emoji columns (see 3.sql migration).
  */
 async function pushBabyNameToRemote() {
   if (!supabaseClient || !navigator.onLine || !familyId) return;
@@ -125,7 +122,6 @@ async function syncBabyNameFromRemote() {
   const { data } = await supabaseClient
     .from('families').select('baby_name,baby_emoji').eq('id', familyId).maybeSingle();
   if (!data) return;
-
   const p = getActiveProfile();
   let changed = false;
   if (data.baby_name  && data.baby_name  !== p.name)  { p.name  = data.baby_name;  changed = true; }
@@ -136,7 +132,6 @@ async function syncBabyNameFromRemote() {
 // ── REALTIME ─────────────────────────────────────────────────────────────────
 function setupRealtime() {
   if (!supabaseClient) return;
-  // Remove previous channels to avoid duplicates on profile switch
   _realtimeChannels.forEach(ch => supabaseClient.removeChannel(ch));
   _realtimeChannels = [];
 
@@ -156,8 +151,7 @@ function setupRealtime() {
         if (o.type === 'feed') stopBreastTimerLocal(o.side);
         else                   stopSleepTimerLocal();
       }
-    })
-    .subscribe();
+    }).subscribe();
 
   // Logs channel
   const logCh = supabaseClient.channel('rt-logs-' + familyId)
@@ -175,10 +169,9 @@ function setupRealtime() {
         if (idx >= 0) allLogs[idx] = n; else allLogs.push(n);
         dbPut(n); renderAll();
       }
-    })
-    .subscribe();
+    }).subscribe();
 
-  // Families channel (baby name changes)
+  // Families channel (baby name + emoji changes from other device)
   const famCh = supabaseClient.channel('rt-families-' + familyId)
     .on('postgres_changes', {
       event: 'UPDATE', schema: 'public', table: 'families',
@@ -190,9 +183,8 @@ function setupRealtime() {
       let changed = false;
       if (n.baby_name  && n.baby_name  !== p.name)  { p.name  = n.baby_name;  changed = true; }
       if (n.baby_emoji && n.baby_emoji !== p.emoji) { p.emoji = n.baby_emoji; changed = true; }
-      if (changed) { saveProfiles(); updateHeaderProfile(); }
-    })
-    .subscribe();
+      if (changed) { saveProfiles(); updateHeaderProfile(); showToast(`Profil mis à jour : ${p.name}`); }
+    }).subscribe();
 
   _realtimeChannels = [timerCh, logCh, famCh];
 }
@@ -219,7 +211,6 @@ async function createFamily() {
 
   initSupabase();
 
-  // Push existing local logs
   if (allLogs.length > 0) {
     setSyncDot('syncing');
     await supabaseClient.from('logs').upsert(
@@ -233,15 +224,12 @@ async function createFamily() {
 async function joinFamily() {
   const code = document.getElementById('invite-code').value.trim();
   if (!code || code.length < 20) { showToast('Code invalide'); return; }
-
   const p = getActiveProfile();
   p.familyId = code;
   saveProfiles();
   familyId = code;
-
   document.getElementById('sync-modal').classList.remove('open');
   document.getElementById('btn-share').style.display = 'block';
-
   initSupabase();
   showToast('Famille rejointe, synchronisation…');
 }

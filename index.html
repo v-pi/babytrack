@@ -10,7 +10,7 @@
   <meta name="apple-mobile-web-app-title" content="BabyTrack"/>
   <link rel="manifest" href="manifest.json"/>
   <link rel="apple-touch-icon" href="icon-192.png"/>
-  <link rel="stylesheet" href="css/main.css"/>
+  <link rel="stylesheet" href="main.css?v=1"/>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>
@@ -61,7 +61,6 @@
           <div class="last-feed" id="last-right"></div>
         </div>
       </div>
-      <!-- Dernière tétée globale -->
       <div class="last-feed-global" id="last-feed-global"></div>
     </div>
     <div class="summary-row">
@@ -140,7 +139,7 @@
     <div id="timeline-container"></div>
   </div>
 
-</div>
+</div><!-- /.content -->
 
 <!-- ── TABS ── -->
 <div class="tabs">
@@ -235,10 +234,12 @@
 
 <div class="toast" id="toast"></div>
 
-<!-- ── SCRIPTS ── -->
-<script src="js/utils.js"></script>
-<script src="js/db.js"></script>
-<script src="js/sync.js"></script>
-<script src="js/app.js"></script>
+<!-- ── SCRIPTS (all at root level, versioned) ── -->
+<script src="utils.js?v=1"></script>
+<script src="db.js?v=1"></script>
+<script src="state.js?v=1"></script>
+<script src="render.js?v=1"></script>
+<script src="sync.js?v=1"></script>
+<script src="app.js?v=1"></script>
 </body>
 </html>

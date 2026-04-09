@@ -1,5 +1,9 @@
-const CACHE = 'babytrack-v12';
-const ASSETS = ['./', './index.html', './manifest.json'];
+const CACHE = 'babytrack-v1';
+const ASSETS = [
+  './', './index.html', './manifest.json',
+  './main.css', './utils.js', './db.js',
+  './state.js', './render.js', './sync.js', './app.js'
+];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS)));
@@ -16,12 +20,11 @@ self.addEventListener('activate', e => {
 });
 
 self.addEventListener('fetch', e => {
-  // Network-first for HTML navigation requests → always get the latest version
+  // Network-first for HTML navigation → always get the latest version
   if (e.request.mode === 'navigate') {
     e.respondWith(
       fetch(e.request)
         .then(res => {
-          // Update the cache with the fresh response
           const clone = res.clone();
           caches.open(CACHE).then(c => c.put(e.request, clone));
           return res;
@@ -30,7 +33,8 @@ self.addEventListener('fetch', e => {
     );
     return;
   }
-  // Cache-first for other assets (icons, manifest…)
+  // Cache-first for other assets (icons, manifest, versioned JS/CSS…)
+  // Versioned URLs (?v=N) bust the cache automatically when version changes.
   e.respondWith(
     caches.match(e.request).then(cached => cached || fetch(e.request))
   );
