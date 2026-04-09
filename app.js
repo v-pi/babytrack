@@ -338,46 +338,18 @@ function deleteEntry() {
 }
 
 // ── VISIBILITY CHANGE ─────────────────────────────────────────────────────────
-// Restart ticks and re-sync with remote when the user comes back to the tab.
 document.addEventListener('visibilitychange', () => {
   if (!document.hidden) {
     ['left','right'].forEach(s => { if (breastActive[s]) activateBreastTimerLocal(s, breastActive[s].start); });
     if (sleepActive) activateSleepTimerLocal(sleepActive.start);
     startLastFeedTick();
-    // Re-sync timers + logs when waking from sleep/tab switch
+    
+    // Une seule commande suffit, elle gère maintenant les retry, delete et pull.
     if (supabaseClient && navigator.onLine) syncWithRemote();
-    // Retry any previously failed uploads
-    if (pendingSyncIds.size > 0 && navigator.onLine && supabaseClient) {
-      const toRetry = allLogs.filter(l => pendingSyncIds.has(l.id));
-      if (toRetry.length > 0)
-        supabaseClient.from('logs')
-          .upsert(toRetry.map(l => ({ ...l, family_id: familyId })))
-          .then(({ error }) => { if (!error) { pendingSyncIds.clear(); renderAll(); } });
-    }
   } else {
     stopAllTicks();
   }
 });
-
-// ── PULL-TO-REFRESH ───────────────────────────────────────────────────────────
-// Triggers syncWithRemote() on pull-down while scrolled to top (all tabs).
-(function setupPTR() {
-  const content = document.querySelector('.content');
-  let startY = 0, pulling = false;
-  content.addEventListener('touchstart', e => {
-    if (content.scrollTop === 0) { startY = e.touches[0].clientY; pulling = true; }
-    else pulling = false;
-  }, { passive: true });
-  content.addEventListener('touchend', e => {
-    if (!pulling) return;
-    pulling = false;
-    const dy = e.changedTouches[0].clientY - startY;
-    if (dy > 65 && supabaseClient && navigator.onLine) {
-      showToast('Synchronisation…');
-      syncWithRemote();
-    }
-  }, { passive: true });
-})();
 
 // ── SWIPE (TIMELINE only) ─────────────────────────────────────────────────────
 (function setupSwipe() {

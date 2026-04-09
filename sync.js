@@ -29,18 +29,28 @@ async function syncWithRemote() {
   if (!navigator.onLine || !supabaseClient || !familyId) return;
   setSyncDot('syncing');
   try {
-    // 1. Push local-only logs
-    const { data: remoteIds } = await supabaseClient
-      .from('logs').select('id').eq('family_id', familyId);
-    const remoteIdSet = new Set((remoteIds || []).map(r => r.id));
-    const localOnly = allLogs.filter(l => !remoteIdSet.has(l.id));
-    if (localOnly.length > 0) {
-      const { error } = await supabaseClient.from('logs')
-        .upsert(localOnly.map(l => ({ ...l, family_id: familyId })));
-      if (!error) localOnly.forEach(l => pendingSyncIds.delete(l.id));
+    // 1. Exécuter les suppressions en attente (prioritaire)
+    if (pendingDeletes.size > 0) {
+      for (const id of pendingDeletes) {
+        await supabaseClient.from('logs').delete().eq('id', id);
+      }
+      pendingDeletes.clear();
+      saveSyncQueues();
     }
 
-    // 2. Pull all remote logs
+    // 2. Pousser les créations/modifications en attente
+    if (pendingSyncIds.size > 0) {
+      const toPush = allLogs.filter(l => pendingSyncIds.has(l.id));
+      if (toPush.length > 0) {
+        const { error } = await supabaseClient.from('logs')
+          .upsert(toPush.map(l => ({ ...l, family_id: familyId })));
+        if (!error) pendingSyncIds.clear();
+      }
+      saveSyncQueues();
+    }
+
+    // 3. Récupérer l'historique complet depuis le serveur
+    // Écraser la base locale permet de supprimer automatiquement les éventuels "zombies"
     const { data, error } = await supabaseClient
       .from('logs').select('*').eq('family_id', familyId);
     if (error) throw error;
@@ -51,10 +61,10 @@ async function syncWithRemote() {
       for (const l of data) await dbPut(l);
     }
 
-    // 3. Sync active timers (keeps sleep/feed state in sync across browsers)
+    // 4. Synchroniser les chronomètres en cours
     await syncTimersFromRemote();
 
-    // 4. Sync baby name + emoji from families table
+    // 5. Synchroniser le profil (nom / emoji bébé)
     await syncBabyNameFromRemote();
 
     setSyncDot('ok');

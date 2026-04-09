@@ -8,11 +8,12 @@ const EMOJIS = ['👶','🧒','🐣','🌟','🌈','🦋','🐧','🐻','🦊','
 // ── GLOBAL STATE ─────────────────────────────────────────────────────────────
 let profiles         = [];
 let activeProfileId  = null;
-let familyId         = null;      // used by db.js & sync.js
+let familyId         = null;
 let allLogs          = [];
-let pendingSyncIds   = new Set();
-let breastActive     = { left: null, right: null };  // { start: ms } | null
-let sleepActive      = null;                          // { start: ms } | null
+let pendingSyncIds   = new Set(); // Logs à ajouter/modifier sur le serveur
+let pendingDeletes   = new Set(); // IDs à supprimer sur le serveur
+let breastActive     = { left: null, right: null };
+let sleepActive      = null;
 let ticks            = {};
 let editingLog       = null;
 let editingProfileId = null;
@@ -21,7 +22,20 @@ let toastTO;
 let tlDayIndex = 0, tlDays = [];
 const TICK_LAST_FEED = 'last-feed-global';
 
-// ── PROFILES ─────────────────────────────────────────────────────────────────
+// ── SYNC QUEUES (Sauvegarde locale des actions en attente) ───────────────────
+function loadSyncQueues() {
+  try {
+    pendingSyncIds = new Set(JSON.parse(localStorage.getItem('bt_pending_sync') || '[]'));
+    pendingDeletes = new Set(JSON.parse(localStorage.getItem('bt_pending_del') || '[]'));
+  } catch { pendingSyncIds = new Set(); pendingDeletes = new Set(); }
+}
+
+function saveSyncQueues() {
+  localStorage.setItem('bt_pending_sync', JSON.stringify([...pendingSyncIds]));
+  localStorage.setItem('bt_pending_del', JSON.stringify([...pendingDeletes]));
+}
+
+// ── PROFILES (Ajoute juste loadSyncQueues à l'intérieur de loadProfiles) ─────
 function loadProfiles() {
   try { profiles = JSON.parse(localStorage.getItem('bt_profiles') || '[]'); } catch { profiles = []; }
   activeProfileId = localStorage.getItem('bt_active_profile');
@@ -32,6 +46,8 @@ function loadProfiles() {
   }
   if (!activeProfileId || !profiles.find(p => p.id === activeProfileId))
     activeProfileId = profiles[0].id;
+    
+  loadSyncQueues(); // <--- NOUVEAU
 }
 
 function saveProfiles() {
@@ -62,11 +78,14 @@ async function logAction(log) {
   allLogs.push(log);
   renderAll();
   await dbPut(log);
+
+  pendingSyncIds.add(log.id); saveSyncQueues(); // File d'attente
+
   if (supabaseClient && navigator.onLine && familyId) {
     setSyncDot('syncing');
-    const { error } = await supabaseClient.from('logs').insert({ ...log, family_id: familyId });
-    if (error) { pendingSyncIds.add(log.id); setSyncDot('error'); }
-    else        { setSyncDot('ok'); setTimeout(() => setSyncDot(''), 2000); }
+    const { error } = await supabaseClient.from('logs').upsert({ ...log, family_id: familyId });
+    if (!error) { pendingSyncIds.delete(log.id); saveSyncQueues(); setSyncDot('ok'); setTimeout(() => setSyncDot(''), 2000); }
+    else setSyncDot('error');
   }
 }
 
@@ -75,16 +94,32 @@ async function updateLogAction(log) {
   if (idx >= 0) allLogs[idx] = log;
   renderAll();
   await dbPut(log);
-  if (supabaseClient && navigator.onLine && familyId)
-    await supabaseClient.from('logs').upsert({ ...log, family_id: familyId });
+
+  pendingSyncIds.add(log.id); saveSyncQueues(); // File d'attente
+
+  if (supabaseClient && navigator.onLine && familyId) {
+    setSyncDot('syncing');
+    const { error } = await supabaseClient.from('logs').upsert({ ...log, family_id: familyId });
+    if (!error) { pendingSyncIds.delete(log.id); saveSyncQueues(); setSyncDot('ok'); setTimeout(() => setSyncDot(''), 2000); }
+    else setSyncDot('error');
+  }
 }
 
 async function deleteLogAction(id) {
   allLogs = allLogs.filter(l => l.id !== id);
   renderAll();
   await dbDel(id);
-  if (supabaseClient && navigator.onLine && familyId)
-    await supabaseClient.from('logs').delete().eq('id', id);
+
+  pendingDeletes.add(id); 
+  pendingSyncIds.delete(id); // Si on supprime un élément pas encore envoyé, on l'annule
+  saveSyncQueues();
+
+  if (supabaseClient && navigator.onLine && familyId) {
+    setSyncDot('syncing');
+    const { error } = await supabaseClient.from('logs').delete().eq('id', id);
+    if (!error) { pendingDeletes.delete(id); saveSyncQueues(); setSyncDot('ok'); setTimeout(() => setSyncDot(''), 2000); }
+    else setSyncDot('error');
+  }
 }
 
 // ── TIMER HELPERS ─────────────────────────────────────────────────────────────
