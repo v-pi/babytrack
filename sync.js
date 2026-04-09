@@ -82,28 +82,37 @@ async function syncTimersFromRemote() {
     .from('active_timers').select('*').eq('family_id', familyId);
   if (!timers) return;
 
+  // Sync Allaitement
   ['left', 'right'].forEach(side => {
     const a = timers.find(t => t.type === 'feed' && t.side === side);
     if (a && !breastActive[side]) activateBreastTimerLocal(side, toMs(a.start_time));
     else if (!a && breastActive[side]) stopBreastTimerLocal(side);
   });
-  const sa = timers.find(t => t.type === 'sleep');
+
+  // Sync Sommeil (on cherche 'none' au lieu de null)
+  const sa = timers.find(t => t.type === 'sleep' && (t.side === 'none' || !t.side));
   if (sa && !sleepActive)       activateSleepTimerLocal(toMs(sa.start_time));
   else if (!sa && sleepActive)  stopSleepTimerLocal();
 }
 
-/** Upsert or delete a timer row on Supabase. */
+/** Upsert ou delete avec protection contre le NULL dans la Primary Key */
 async function setRemoteTimer(type, side, startTime) {
   if (!supabaseClient || !navigator.onLine || !familyId) return;
+  const dbSide = side || 'none'; // 'none' au lieu de null pour satisfaire la PK SQL
+
   if (startTime !== null) {
     await supabaseClient.from('active_timers').upsert({
-      family_id: familyId, type, side: side || null, start_time: startTime
+      family_id: familyId, 
+      type: type, 
+      side: dbSide, 
+      start_time: startTime
     });
   } else {
-    let q = supabaseClient.from('active_timers')
-      .delete().eq('type', type).eq('family_id', familyId);
-    if (side) q = q.eq('side', side);
-    await q;
+    await supabaseClient.from('active_timers')
+      .delete()
+      .eq('family_id', familyId)
+      .eq('type', type)
+      .eq('side', dbSide);
   }
 }
 
@@ -146,22 +155,23 @@ function setupRealtime() {
   _realtimeChannels = [];
 
   // Active timers channel
-  const timerCh = supabaseClient.channel('rt-timers-' + familyId)
-    .on('postgres_changes', {
-      event: '*', schema: 'public', table: 'active_timers',
-      filter: `family_id=eq.${familyId}`
-    }, payload => {
-      const { eventType, new: n, old: o } = payload;
-      if (eventType === 'INSERT' || eventType === 'UPDATE') {
-        if (!n) return;
-        if (n.type === 'feed') activateBreastTimerLocal(n.side, toMs(n.start_time));
-        else                   activateSleepTimerLocal(toMs(n.start_time));
-      } else if (eventType === 'DELETE') {
-        if (!o) return;
-        if (o.type === 'feed') stopBreastTimerLocal(o.side);
-        else                   stopSleepTimerLocal();
-      }
-    }).subscribe();
+	const timerCh = supabaseClient.channel('rt-timers-' + familyId)
+	  .on('postgres_changes', {
+		event: '*', schema: 'public', table: 'active_timers',
+		filter: `family_id=eq.${familyId}`
+	  }, payload => {
+		const { eventType, new: n, old: o } = payload;
+		if (eventType === 'INSERT' || eventType === 'UPDATE') {
+		  if (!n) return;
+		  if (n.type === 'feed') activateBreastTimerLocal(n.side, toMs(n.start_time));
+		  else                   activateSleepTimerLocal(toMs(n.start_time));
+		} else if (eventType === 'DELETE') {
+		  if (!o) return;
+		  // Ici, si le side est 'none', c'est le sommeil
+		  if (o.side === 'none' || o.type === 'sleep') stopSleepTimerLocal();
+		  else stopBreastTimerLocal(o.side);
+		}
+	  }).subscribe();
 
   // Logs channel
   const logCh = supabaseClient.channel('rt-logs-' + familyId)

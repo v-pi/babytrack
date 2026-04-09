@@ -1,4 +1,4 @@
-const CACHE = 'babytrack-v14';
+const CACHE = 'babytrack-v15';
 const ASSETS = [
   './', './index.html', './manifest.json',
   './main.css', './utils.js', './db.js',
