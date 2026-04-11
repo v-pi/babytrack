@@ -1,17 +1,16 @@
-// ── state.js ──────────────────────────────────────────────────────────────────
-// Global state, profile management, session persistence, log CRUD, timer helpers.
-// No DOM rendering here — only data + a few status helpers.
+// ── state.js (Phase 2) ────────────────────────────────────────────────────────
+// État global, profils, persistance session, CRUD logs, helpers timers.
+// setSyncDot et updateHeaderProfile passent par window.app (Alpine).
 // ─────────────────────────────────────────────────────────────────────────────
 
 const EMOJIS = ['👶','🧒','🐣','🌟','🌈','🦋','🐧','🐻','🦊','🐼','🍭','🌸'];
 
-// ── GLOBAL STATE ─────────────────────────────────────────────────────────────
 let profiles         = [];
 let activeProfileId  = null;
 let familyId         = null;
 let allLogs          = [];
-let pendingSyncIds   = new Set(); // Logs à ajouter/modifier sur le serveur
-let pendingDeletes   = new Set(); // IDs à supprimer sur le serveur
+let pendingSyncIds   = new Set();
+let pendingDeletes   = new Set();
 let breastActive     = { left: null, right: null };
 let sleepActive      = null;
 let ticks            = {};
@@ -22,20 +21,19 @@ let toastTO;
 let tlDayIndex = 0, tlDays = [];
 const TICK_LAST_FEED = 'last-feed-global';
 
-// ── SYNC QUEUES (Sauvegarde locale des actions en attente) ───────────────────
+// ── FILES D'ATTENTE SYNC ─────────────────────────────────────────────────────
 function loadSyncQueues() {
   try {
     pendingSyncIds = new Set(JSON.parse(localStorage.getItem('bt_pending_sync') || '[]'));
     pendingDeletes = new Set(JSON.parse(localStorage.getItem('bt_pending_del') || '[]'));
   } catch { pendingSyncIds = new Set(); pendingDeletes = new Set(); }
 }
-
 function saveSyncQueues() {
   localStorage.setItem('bt_pending_sync', JSON.stringify([...pendingSyncIds]));
-  localStorage.setItem('bt_pending_del', JSON.stringify([...pendingDeletes]));
+  localStorage.setItem('bt_pending_del',  JSON.stringify([...pendingDeletes]));
 }
 
-// ── PROFILES (Ajoute juste loadSyncQueues à l'intérieur de loadProfiles) ─────
+// ── PROFILS ───────────────────────────────────────────────────────────────────
 function loadProfiles() {
   try { profiles = JSON.parse(localStorage.getItem('bt_profiles') || '[]'); } catch { profiles = []; }
   activeProfileId = localStorage.getItem('bt_active_profile');
@@ -46,31 +44,28 @@ function loadProfiles() {
   }
   if (!activeProfileId || !profiles.find(p => p.id === activeProfileId))
     activeProfileId = profiles[0].id;
-    
-  loadSyncQueues(); // <--- NOUVEAU
+  loadSyncQueues();
 }
-
 function saveProfiles() {
   localStorage.setItem('bt_profiles', JSON.stringify(profiles));
   localStorage.setItem('bt_active_profile', activeProfileId);
 }
-
 function getActiveProfile() {
   return profiles.find(p => p.id === activeProfileId) || profiles[0];
 }
 
+// ── INDICATEUR SYNC ───────────────────────────────────────────────────────────
+function setSyncDot(state) {
+  if (window.app) window.app.syncState = state;
+}
+
+// ── EN-TÊTE PROFIL ────────────────────────────────────────────────────────────
 function updateHeaderProfile() {
   const p = getActiveProfile();
-  document.getElementById('header-emoji').textContent = p.emoji;
-  document.getElementById('header-name').textContent  = p.name;
+  if (window.app) { window.app.headerEmoji = p.emoji; window.app.headerName = p.name; }
 }
 
-// ── SYNC DOT ─────────────────────────────────────────────────────────────────
-function setSyncDot(state) {
-  document.getElementById('sync-dot').className = 'sync-dot ' + state;
-}
-
-// ── LOG ACTIONS ───────────────────────────────────────────────────────────────
+// ── ACTIONS LOGS ─────────────────────────────────────────────────────────────
 async function logAction(log) {
   log.id = crypto.randomUUID();
   if (familyId) log.family_id  = familyId;
@@ -78,9 +73,7 @@ async function logAction(log) {
   allLogs.push(log);
   renderAll();
   await dbPut(log);
-
-  pendingSyncIds.add(log.id); saveSyncQueues(); // File d'attente
-
+  pendingSyncIds.add(log.id); saveSyncQueues();
   if (supabaseClient && navigator.onLine && familyId) {
     setSyncDot('syncing');
     const { error } = await supabaseClient.from('logs').upsert({ ...log, family_id: familyId });
@@ -94,9 +87,7 @@ async function updateLogAction(log) {
   if (idx >= 0) allLogs[idx] = log;
   renderAll();
   await dbPut(log);
-
-  pendingSyncIds.add(log.id); saveSyncQueues(); // File d'attente
-
+  pendingSyncIds.add(log.id); saveSyncQueues();
   if (supabaseClient && navigator.onLine && familyId) {
     setSyncDot('syncing');
     const { error } = await supabaseClient.from('logs').upsert({ ...log, family_id: familyId });
@@ -109,11 +100,7 @@ async function deleteLogAction(id) {
   allLogs = allLogs.filter(l => l.id !== id);
   renderAll();
   await dbDel(id);
-
-  pendingDeletes.add(id); 
-  pendingSyncIds.delete(id); // Si on supprime un élément pas encore envoyé, on l'annule
-  saveSyncQueues();
-
+  pendingDeletes.add(id); pendingSyncIds.delete(id); saveSyncQueues();
   if (supabaseClient && navigator.onLine && familyId) {
     setSyncDot('syncing');
     const { error } = await supabaseClient.from('logs').delete().eq('id', id);
@@ -122,12 +109,11 @@ async function deleteLogAction(id) {
   }
 }
 
-// ── TIMER HELPERS ─────────────────────────────────────────────────────────────
+// ── HELPERS TIMERS ────────────────────────────────────────────────────────────
 function startTick(id, fn) { if (ticks[id]) clearInterval(ticks[id]); ticks[id] = setInterval(fn, 1000); fn(); }
 function stopTick(id)      { clearInterval(ticks[id]); delete ticks[id]; }
 function stopAllTicks()    { Object.keys(ticks).forEach(stopTick); }
 
-/** Auto-stop any running timer except the one identified by `except`. */
 function stopAllActive(except) {
   ['left', 'right'].forEach(side => {
     if (except !== side && breastActive[side]) {
@@ -150,7 +136,7 @@ function logDiaper(type) {
   showToast(type === 'wet' ? '💧 Couche pipi' : '💩 Couche selle');
 }
 
-// ── SESSION (local timer persistence across page reloads) ─────────────────────
+// ── SESSION ───────────────────────────────────────────────────────────────────
 function saveSession() {
   localStorage.setItem('bt_session_'+activeProfileId, JSON.stringify({ breastActive, sleepActive }));
 }

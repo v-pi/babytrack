@@ -1,22 +1,121 @@
-// ── app.js ────────────────────────────────────────────────────────────────────
-// Orchestration: init, timer toggle handlers, tab/UI management, modals, events.
-// Depends on state.js, render.js, utils.js, db.js, sync.js.
+// ── app.js (Phase 2) ──────────────────────────────────────────────────────────
+// Composant Alpine + orchestration. Phase 2 : profils, emojis, timers, modales
+// gérés entièrement via l'état Alpine — plus aucun getElementById résiduel pour
+// l'UI réactive.
 // ─────────────────────────────────────────────────────────────────────────────
+
+// ── COMPOSANT ALPINE ─────────────────────────────────────────────────────────
+function babyApp() {
+  return {
+    // ── En-tête ──────────────────────────────────────────────────────────────
+    currentTab:   'feed',
+    headerEmoji:  '👶',
+    headerName:   'Mon bébé',
+    todayDate:    '',
+    showShareBtn: false,
+    syncState:    '',
+
+    // ── Chronomètres allaitement ─────────────────────────────────────────────
+    timerLeft:      '00:00',
+    timerRight:     '00:00',
+    breastRunning:  { left: false, right: false },
+    lastLeft:       '',
+    lastRight:      '',
+
+    // ── Dernière tétée ────────────────────────────────────────────────────────
+    lastFeedText:   '',
+    showLastFeed:   false,
+
+    // ── Chronomètre sommeil ───────────────────────────────────────────────────
+    timerSleep:   '--:--',
+    isSleeping:   false,
+    sleepLabel:   'Début du sommeil',
+    sleepSub:     'Appuyer pour commencer',
+    sleepIcon:    '😴',
+
+    // ── Stats résumé ──────────────────────────────────────────────────────────
+    feedCount:    0,  feedTotal:    '0 min',
+    sleepCount:   0,  sleepTotal:   '0 min',
+    diaperWet:    0,  diaperDirty:  0,
+
+    // ── Historiques (x-for) ───────────────────────────────────────────────────
+    feedGroups:    [],   // [{label, logs[]}]
+    sleepGroups:   [],
+    diaperGroups:  [],
+
+    // ── Timeline ──────────────────────────────────────────────────────────────
+    tlNavLabel:     '—',
+    tlPrevDisabled: true,
+    tlNextDisabled: true,
+    tlSwiping:      false,
+    tlEmpty:        false,
+    tlHasFeed:      false,
+    tlHasSleep:     false,
+    tlHasDiaper:    false,
+    tlFeedBars:     [],  // [{id, side, left, width}]
+    tlSleepBars:    [],  // [{id, left, width}]
+    tlDiaperDots:   [],  // [{id, type, left}]
+
+    // ── Profils ───────────────────────────────────────────────────────────────
+    profileList:        [],  // copie de profiles[]
+    emojis:             ['👶','🧒','🐣','🌟','🌈','🦋','🐧','🐻','🦊','🐼','🍭','🌸'],
+    selectedEmoji:      '👶',
+    profileFormVisible: false,
+    profileFormMode:    'create',  // 'create' | 'edit'
+
+    // ── Modales ───────────────────────────────────────────────────────────────
+    editModalOpen:    false,
+    profileModalOpen: false,
+    syncModalOpen:    false,
+    shareModalOpen:   false,
+    shareQrUrl:       '',
+    shareLink:        '',
+
+    // ── Toast ─────────────────────────────────────────────────────────────────
+    toastMsg:     '',
+    toastVisible: false,
+    _toastTimer:  null,
+
+    // ── Formatters exposés aux templates x-for ────────────────────────────────
+    fmtTime(ts)  { return fmtTime(ts); },
+    fmtDur(ms)   { return fmtDur(ms); },
+
+    // ── Helpers ───────────────────────────────────────────────────────────────
+    /** true si le log est en attente de sync (badge orange). */
+    isPending(id) { return typeof pendingSyncIds !== 'undefined' && pendingSyncIds.has(id); },
+
+    /** Label du côté d'allaitement. */
+    sideLabel(side) { return side === 'left' ? 'gauche' : 'droit'; },
+
+    /** Label couche. */
+    diaperLabel(type) { return type === 'wet' ? '💧 Pipi' : '💩 Selle'; },
+
+    // ── Init Alpine ───────────────────────────────────────────────────────────
+    init() {
+      window.app = this;
+      this.todayDate = new Date().toLocaleDateString('fr-FR', {
+        weekday: 'short', day: 'numeric', month: 'short'
+      });
+    },
+
+    toast(msg) {
+      this.toastMsg = msg;
+      this.toastVisible = true;
+      clearTimeout(this._toastTimer);
+      this._toastTimer = setTimeout(() => { this.toastVisible = false; }, 2500);
+    },
+  };
+}
 
 // ── INIT ─────────────────────────────────────────────────────────────────────
 window.onload = async () => {
-  document.getElementById('today-date').textContent =
-    new Date().toLocaleDateString('fr-FR', { weekday:'short', day:'numeric', month:'short' });
-
   await openDB();
   loadProfiles();
   updateHeaderProfile();
 
-  // Restore last active tab (survives F5, not shared between tabs)
   const savedTab = sessionStorage.getItem('bt_tab') || 'feed';
-  switchTab(savedTab, true);   // true = silent, skip early timeline render
+  switchTab(savedTab, true);
 
-  // Handle invite link (?invite=<familyId>)
   const params = new URLSearchParams(window.location.search);
   const invite = params.get('invite');
   if (invite && invite.length > 20) {
@@ -31,13 +130,13 @@ window.onload = async () => {
   familyId = getActiveProfile().familyId;
 
   if (!familyId) {
-    document.getElementById('sync-modal').classList.add('open');
+    window.app.syncModalOpen = true;
   } else {
-    document.getElementById('btn-share').style.display = 'block';
+    window.app.showShareBtn = true;
     initSupabase();
   }
 
-  window.addEventListener('online',  () => {
+  window.addEventListener('online', () => {
     setSyncDot('syncing');
     setTimeout(() => { if (supabaseClient) syncWithRemote(); else if (familyId) initSupabase(); }, 800);
   });
@@ -74,20 +173,18 @@ function toggleBreast(side) {
 
 function activateBreastTimerLocal(side, start) {
   breastActive[side] = { start };
-  document.getElementById('btn-'+side).classList.add('running');
+  window.app.breastRunning[side] = true;
   startTick('b-'+side, () => {
-    const el = document.getElementById('timer-'+side);
-    if (el) el.textContent = fmtDur(Date.now() - start);
+    window.app['timer' + (side === 'left' ? 'Left' : 'Right')] = fmtDur(Date.now() - start);
   });
   saveSession();
 }
 
 function stopBreastTimerLocal(side) {
   breastActive[side] = null;
-  document.getElementById('btn-'+side).classList.remove('running');
+  window.app.breastRunning[side] = false;
+  window.app['timer' + (side === 'left' ? 'Left' : 'Right')] = '00:00';
   stopTick('b-'+side);
-  const el = document.getElementById('timer-'+side);
-  if (el) el.textContent = '00:00';
   saveSession();
 }
 
@@ -108,54 +205,42 @@ function toggleSleep() {
 
 function activateSleepTimerLocal(start) {
   sleepActive = { start };
-  document.getElementById('sleep-btn').classList.add('sleeping');
-  document.getElementById('sleep-label').textContent = 'En train de dormir';
-  document.getElementById('sleep-sub').textContent   = 'Appuyer pour arrêter';
-  document.getElementById('sleep-icon').textContent  = '🌙';
+  Object.assign(window.app, {
+    isSleeping: true,
+    sleepLabel: 'En train de dormir',
+    sleepSub:   'Appuyer pour arrêter',
+    sleepIcon:  '🌙',
+  });
   startTick('sleep', () => {
-    const el = document.getElementById('sleep-timer');
-    if (el) el.textContent = fmtDur(Date.now() - start);
+    window.app.timerSleep = fmtDur(Date.now() - start);
   });
   saveSession();
 }
 
 function stopSleepTimerLocal() {
   sleepActive = null;
-  document.getElementById('sleep-btn').classList.remove('sleeping');
-  document.getElementById('sleep-label').textContent = 'Début du sommeil';
-  document.getElementById('sleep-sub').textContent   = 'Appuyer pour commencer';
-  document.getElementById('sleep-icon').textContent  = '😴';
-  const el = document.getElementById('sleep-timer');
-  if (el) el.textContent = '--:--';
+  Object.assign(window.app, {
+    isSleeping: false,
+    sleepLabel: 'Début du sommeil',
+    sleepSub:   'Appuyer pour commencer',
+    sleepIcon:  '😴',
+    timerSleep: '--:--',
+  });
   stopTick('sleep');
   saveSession();
 }
 
-// ── TABS ─────────────────────────────────────────────────────────────────────
-/**
- * @param {string} name - tab name
- * @param {boolean} [silent] - skip timeline render (used at init)
- */
+// ── ONGLETS ───────────────────────────────────────────────────────────────────
 function switchTab(name, silent) {
-  ['feed','sleep','diaper','timeline'].forEach(t => {
-    document.getElementById('section-'+t).classList.toggle('active', t === name);
-    document.getElementById('tab-'+t).classList.toggle('active', t === name);
-  });
   currentTab = name;
+  window.app.currentTab = name;
   sessionStorage.setItem('bt_tab', name);
-  // Always scroll to top so pull-to-refresh works on every tab
   document.querySelector('.content').scrollTop = 0;
   if (!silent && name === 'timeline') renderTimeline();
 }
 
 // ── TOAST ─────────────────────────────────────────────────────────────────────
-function showToast(msg) {
-  const el = document.getElementById('toast');
-  el.textContent = msg;
-  el.classList.add('show');
-  clearTimeout(toastTO);
-  toastTO = setTimeout(() => el.classList.remove('show'), 2500);
-}
+function showToast(msg) { window.app.toast(msg); }
 
 // ── EXPORT ───────────────────────────────────────────────────────────────────
 function exportCSV() {
@@ -177,15 +262,15 @@ function exportCSV() {
   showToast('Export CSV téléchargé !');
 }
 
-// ── PROFILE MODAL ─────────────────────────────────────────────────────────────
+// ── MODALE PROFILS ────────────────────────────────────────────────────────────
 function openProfileModal() {
   renderProfileList();
-  document.getElementById('profile-form').style.display = 'none';
-  document.getElementById('profile-modal').classList.add('open');
+  window.app.profileFormVisible = false;
+  window.app.profileModalOpen = true;
 }
 function closeProfileModal(e) {
   if (e && e.target !== document.getElementById('profile-modal')) return;
-  document.getElementById('profile-modal').classList.remove('open');
+  window.app.profileModalOpen = false;
 }
 
 async function switchToProfile(profileId) {
@@ -194,21 +279,23 @@ async function switchToProfile(profileId) {
   activeProfileId = profileId; saveProfiles();
   familyId = getActiveProfile().familyId;
   updateHeaderProfile();
-  document.getElementById('profile-modal').classList.remove('open');
-  supabaseClient = null; breastActive = {left:null,right:null}; sleepActive = null;
+  window.app.profileModalOpen = false;
+  supabaseClient = null;
+  breastActive = { left:null, right:null };
+  sleepActive = null;
   await loadProfileData();
-  document.getElementById('btn-share').style.display = familyId ? 'block' : 'none';
+  window.app.showShareBtn = !!familyId;
   if (familyId) initSupabase();
-  else document.getElementById('sync-modal').classList.add('open');
+  else window.app.syncModalOpen = true;
   showToast('Profil : ' + getActiveProfile().name);
 }
 
 function openAddProfileForm() {
   editingProfileId = null;
   document.getElementById('pf-name').value = '';
-  renderEmojiGrid('👶');
-  document.getElementById('profile-form').style.display = 'block';
-  document.querySelector('#profile-form .btn-save').textContent = 'Créer';
+  window.app.selectedEmoji  = '👶';
+  window.app.profileFormMode = 'create';
+  window.app.profileFormVisible = true;
 }
 
 function openEditProfile(profileId) {
@@ -216,33 +303,27 @@ function openEditProfile(profileId) {
   const p = profiles.find(x => x.id === profileId);
   if (!p) return;
   document.getElementById('pf-name').value = p.name;
-  renderEmojiGrid(p.emoji);
-  document.getElementById('profile-form').style.display = 'block';
-  document.querySelector('#profile-form .btn-save').textContent = 'Enregistrer';
-}
-
-function selectEmoji(e, el) {
-  document.querySelectorAll('.emoji-opt').forEach(x => x.classList.remove('selected'));
-  el.classList.add('selected');
+  window.app.selectedEmoji  = p.emoji;
+  window.app.profileFormMode = 'edit';
+  window.app.profileFormVisible = true;
 }
 
 function closeProfileForm() {
-  document.getElementById('profile-form').style.display = 'none';
+  window.app.profileFormVisible = false;
   editingProfileId = null;
 }
 
 async function saveProfile() {
   const name = document.getElementById('pf-name').value.trim();
   if (!name) { showToast('Entre un prénom'); return; }
-  const emojiEl = document.querySelector('.emoji-opt.selected');
-  const emoji   = emojiEl ? emojiEl.textContent : '👶';
+  const emoji = window.app.selectedEmoji || '👶';
   if (editingProfileId) {
     const p = profiles.find(x => x.id === editingProfileId);
     if (p) { p.name = name; p.emoji = emoji; }
     saveProfiles();
     if (editingProfileId === activeProfileId) {
       updateHeaderProfile();
-      pushBabyNameToRemote(); // sync name+emoji to Supabase families table
+      pushBabyNameToRemote();
     }
     showToast('Profil mis à jour');
   } else {
@@ -271,28 +352,28 @@ async function resetCurrentProfile() {
   allLogs = []; breastActive = {left:null,right:null}; sleepActive = null;
   localStorage.removeItem('bt_session_'+activeProfileId);
   renderAll();
-  document.getElementById('profile-modal').classList.remove('open');
+  window.app.profileModalOpen = false;
   setSyncDot('');
   showToast('Données effacées');
 }
 
-// ── SHARE MODAL ───────────────────────────────────────────────────────────────
+// ── MODALE PARTAGE ────────────────────────────────────────────────────────────
 function openShareModal() {
   const url = window.location.origin + window.location.pathname + '?invite=' + familyId;
-  document.getElementById('qr-code').src = `https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(url)}`;
-  document.getElementById('share-link-input').value = url;
-  document.getElementById('share-modal').classList.add('open');
+  window.app.shareQrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(url)}`;
+  window.app.shareLink  = url;
+  window.app.shareModalOpen = true;
 }
 function closeShareModal(e) {
   if (e && e.target !== document.getElementById('share-modal')) return;
-  document.getElementById('share-modal').classList.remove('open');
+  window.app.shareModalOpen = false;
 }
 function copyShareLink() {
-  navigator.clipboard.writeText(document.getElementById('share-link-input').value);
+  navigator.clipboard.writeText(window.app.shareLink);
   showToast('Lien copié !');
 }
 
-// ── EDIT MODAL ────────────────────────────────────────────────────────────────
+// ── MODALE ÉDITION ────────────────────────────────────────────────────────────
 function openEdit(id) {
   editingLog = allLogs.find(l => l.id === id);
   if (!editingLog) return;
@@ -311,11 +392,11 @@ function openEdit(id) {
       <div class="modal-field"><label>Fin Heure</label><input type="time" id="ee-t" value="${fmtHM(editingLog.end)}"/></div>
     </div>`;
   }
-  document.getElementById('modal-overlay').classList.add('open');
+  window.app.editModalOpen = true;
 }
 function closeEditModal(e) {
   if (e && e.target !== document.getElementById('modal-overlay')) return;
-  document.getElementById('modal-overlay').classList.remove('open');
+  window.app.editModalOpen = false;
   editingLog = null;
 }
 function saveEntry() {
@@ -323,40 +404,42 @@ function saveEntry() {
   if (editingLog.type === 'diaper') {
     editingLog.timestamp = combineDateTime(document.getElementById('ed-d').value, document.getElementById('ed-t').value);
   } else {
-    editingLog.start     = combineDateTime(document.getElementById('es-d').value, document.getElementById('es-t').value);
-    editingLog.end       = combineDateTime(document.getElementById('ee-d').value, document.getElementById('ee-t').value);
-    editingLog.duration  = editingLog.end - editingLog.start;
+    editingLog.start    = combineDateTime(document.getElementById('es-d').value, document.getElementById('es-t').value);
+    editingLog.end      = combineDateTime(document.getElementById('ee-d').value, document.getElementById('ee-t').value);
+    editingLog.duration = editingLog.end - editingLog.start;
     editingLog.timestamp = editingLog.end;
   }
   updateLogAction(editingLog);
-  closeEditModal(); showToast('Modifié !');
+  window.app.editModalOpen = false;
+  editingLog = null;
+  showToast('Modifié !');
 }
 function deleteEntry() {
   if (!editingLog || !confirm('Supprimer cet événement ?')) return;
   deleteLogAction(editingLog.id);
-  closeEditModal(); showToast('Supprimé');
+  window.app.editModalOpen = false;
+  editingLog = null;
+  showToast('Supprimé');
 }
 
-// ── VISIBILITY CHANGE ─────────────────────────────────────────────────────────
+// ── VISIBILITÉ ────────────────────────────────────────────────────────────────
 document.addEventListener('visibilitychange', () => {
   if (!document.hidden) {
     ['left','right'].forEach(s => { if (breastActive[s]) activateBreastTimerLocal(s, breastActive[s].start); });
     if (sleepActive) activateSleepTimerLocal(sleepActive.start);
     startLastFeedTick();
-    
-    // Une seule commande suffit, elle gère maintenant les retry, delete et pull.
     if (supabaseClient && navigator.onLine) syncWithRemote();
   } else {
     stopAllTicks();
   }
 });
 
-// ── SWIPE (TIMELINE only) ─────────────────────────────────────────────────────
+// ── SWIPE CALENDRIER ──────────────────────────────────────────────────────────
 (function setupSwipe() {
   const section = document.getElementById('section-timeline');
   let startX = 0;
   section.addEventListener('touchstart', e => { startX = e.changedTouches[0].screenX; }, { passive: true });
-  section.addEventListener('touchend',   e => {
+  section.addEventListener('touchend', e => {
     const dx = e.changedTouches[0].screenX - startX;
     if (Math.abs(dx) > 50) tlNav(dx > 0 ? +1 : -1);
   }, { passive: true });

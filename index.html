@@ -10,159 +10,289 @@
   <meta name="apple-mobile-web-app-title" content="BabyTrack"/>
   <link rel="manifest" href="manifest.json"/>
   <link rel="apple-touch-icon" href="icon-192.png"/>
-  <link rel="stylesheet" href="main.css?v=15"/>
+  <link rel="stylesheet" href="main.css?v=16"/>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3/dist/cdn.min.js"></script>
 </head>
-<body>
+<body x-data="babyApp()">
 
-<!-- ── HEADER ── -->
+<!-- ── EN-TÊTE ── -->
 <div class="header">
   <div class="header-left">
     <h1>🌸</h1>
     <button class="profile-pill" onclick="openProfileModal()">
-      <span class="profile-emoji" id="header-emoji">👶</span>
-      <span class="profile-name" id="header-name">Mon bébé</span>
+      <span class="profile-emoji" x-text="headerEmoji"></span>
+      <span class="profile-name"  x-text="headerName"></span>
       <span class="profile-chevron">▼</span>
     </button>
   </div>
   <div class="header-right">
-    <div class="sync-dot" id="sync-dot" title="Synchronisation"></div>
-    <span class="hdate" id="today-date"></span>
-    <button class="share-icon" id="btn-share" style="display:none" onclick="openShareModal()">
+    <div :class="['sync-dot', syncState]" title="Synchronisation"></div>
+    <span class="hdate" x-text="todayDate"></span>
+    <button class="share-icon" x-show="showShareBtn" onclick="openShareModal()">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
     </button>
   </div>
 </div>
 
-<!-- ── CONTENT ── -->
+<!-- ── CONTENU ── -->
 <div class="content">
 
-  <!-- ALLAITEMENT -->
-  <div class="section active" id="section-feed">
+  <!-- ╔══════════════════╗ -->
+  <!-- ║   ALLAITEMENT    ║ -->
+  <!-- ╚══════════════════╝ -->
+  <div class="section" :class="{active: currentTab==='feed'}" id="section-feed">
     <div class="card">
       <div class="card-title">Allaitement</div>
       <div class="breast-grid">
         <div>
-          <button class="breast-btn left" id="btn-left" onclick="toggleBreast('left')">
+          <button class="breast-btn left" :class="{running: breastRunning.left}" onclick="toggleBreast('left')">
             <div class="status-dot"></div>
             <div class="b-icon">🤱</div>
             <div class="b-label">Sein gauche</div>
-            <div class="b-timer" id="timer-left">00:00</div>
+            <div class="b-timer" x-text="timerLeft"></div>
           </button>
-          <div class="last-feed" id="last-left"></div>
+          <div class="last-feed" x-text="lastLeft"></div>
         </div>
         <div>
-          <button class="breast-btn right" id="btn-right" onclick="toggleBreast('right')">
+          <button class="breast-btn right" :class="{running: breastRunning.right}" onclick="toggleBreast('right')">
             <div class="status-dot"></div>
             <div class="b-icon">🤱</div>
             <div class="b-label">Sein droit</div>
-            <div class="b-timer" id="timer-right">00:00</div>
+            <div class="b-timer" x-text="timerRight"></div>
           </button>
-          <div class="last-feed" id="last-right"></div>
+          <div class="last-feed" x-text="lastRight"></div>
         </div>
       </div>
-      <div class="last-feed-global" id="last-feed-global"></div>
+      <div class="last-feed-global" :class="{visible: showLastFeed}" x-text="lastFeedText"></div>
     </div>
+
     <div class="summary-row">
-      <div class="summary-chip pink"><div class="s-val" id="sum-feed-count">0</div><div class="s-lab">tétées auj.</div></div>
-      <div class="summary-chip blue"><div class="s-val" id="sum-feed-total">0 min</div><div class="s-lab">durée totale</div></div>
+      <div class="summary-chip pink"><div class="s-val" x-text="feedCount"></div><div class="s-lab">tétées auj.</div></div>
+      <div class="summary-chip blue"><div class="s-val" x-text="feedTotal"></div><div class="s-lab">durée totale</div></div>
     </div>
+
     <div class="section-label">Tout l'historique</div>
-    <div id="feed-history"></div>
+
+    <!-- Historique allaitement -->
+    <div x-show="feedGroups.length === 0" class="empty-state">Aucune tétée enregistrée</div>
+    <template x-for="group in feedGroups" :key="group.label">
+      <div class="day-group">
+        <div class="day-group-label" x-text="group.label"></div>
+        <div class="history-list">
+          <template x-for="log in group.logs" :key="log.id">
+            <div class="history-item" :class="{pending: isPending(log.id)}" @click="openEdit(log.id)">
+              <div class="h-dot" :class="log.side"></div>
+              <div class="h-main">
+                <div class="h-label" x-text="'Sein ' + sideLabel(log.side)"></div>
+                <div class="h-range" x-text="fmtTime(log.start) + ' → ' + fmtTime(log.end)"></div>
+              </div>
+              <div class="h-dur" x-text="fmtDur(log.duration)"></div>
+              <div class="h-edit-hint">✎</div>
+            </div>
+          </template>
+        </div>
+      </div>
+    </template>
   </div>
 
-  <!-- SOMMEIL -->
-  <div class="section" id="section-sleep">
+  <!-- ╔══════════╗ -->
+  <!-- ║ SOMMEIL  ║ -->
+  <!-- ╚══════════╝ -->
+  <div class="section" :class="{active: currentTab==='sleep'}" id="section-sleep">
     <div class="card">
       <div class="card-title">Sommeil</div>
-      <button class="sleep-btn" id="sleep-btn" onclick="toggleSleep()">
+      <button class="sleep-btn" :class="{sleeping: isSleeping}" onclick="toggleSleep()">
         <div class="sleep-left">
-          <div class="sleep-icon" id="sleep-icon">😴</div>
+          <div class="sleep-icon" x-text="sleepIcon"></div>
           <div>
-            <div class="sleep-label" id="sleep-label">Début du sommeil</div>
-            <div class="sleep-sub" id="sleep-sub">Appuyer pour commencer</div>
+            <div class="sleep-label" x-text="sleepLabel"></div>
+            <div class="sleep-sub"   x-text="sleepSub"></div>
           </div>
         </div>
-        <div class="sleep-timer" id="sleep-timer">--:--</div>
+        <div class="sleep-timer" x-text="timerSleep"></div>
       </button>
     </div>
+
     <div class="summary-row">
-      <div class="summary-chip green"><div class="s-val" id="sum-sleep-count">0</div><div class="s-lab">siestes auj.</div></div>
-      <div class="summary-chip blue"><div class="s-val" id="sum-sleep-total">0 min</div><div class="s-lab">sommeil total</div></div>
+      <div class="summary-chip green"><div class="s-val" x-text="sleepCount"></div><div class="s-lab">siestes auj.</div></div>
+      <div class="summary-chip blue" ><div class="s-val" x-text="sleepTotal"></div><div class="s-lab">sommeil total</div></div>
     </div>
+
     <div class="section-label">Tout l'historique</div>
-    <div id="sleep-history"></div>
+
+    <!-- Historique sommeil -->
+    <div x-show="sleepGroups.length === 0" class="empty-state">Aucun sommeil enregistré</div>
+    <template x-for="group in sleepGroups" :key="group.label">
+      <div class="day-group">
+        <div class="day-group-label" x-text="group.label"></div>
+        <div class="history-list">
+          <template x-for="log in group.logs" :key="log.id">
+            <div class="history-item" :class="{pending: isPending(log.id)}" @click="openEdit(log.id)">
+              <div class="h-dot sleep"></div>
+              <div class="h-main">
+                <div class="h-label">Sommeil</div>
+                <div class="h-range" x-text="fmtTime(log.start) + ' → ' + fmtTime(log.end)"></div>
+              </div>
+              <div class="h-dur" x-text="fmtDur(log.duration)"></div>
+              <div class="h-edit-hint">✎</div>
+            </div>
+          </template>
+        </div>
+      </div>
+    </template>
   </div>
 
-  <!-- COUCHES -->
-  <div class="section" id="section-diaper">
+  <!-- ╔══════════╗ -->
+  <!-- ║ COUCHES  ║ -->
+  <!-- ╚══════════╝ -->
+  <div class="section" :class="{active: currentTab==='diaper'}" id="section-diaper">
     <div class="card">
       <div class="card-title">Changement de couche</div>
       <div class="diaper-grid">
         <button class="diaper-btn wet" onclick="logDiaper('wet')">
           <div class="d-icon">💧</div><div class="d-label">Pipi</div>
-          <div class="d-count" id="diaper-wet-count">0</div>
+          <div class="d-count" x-text="diaperWet"></div>
           <div class="d-sub">aujourd'hui</div>
         </button>
         <button class="diaper-btn dirty" onclick="logDiaper('dirty')">
           <div class="d-icon">💩</div><div class="d-label">Selle</div>
-          <div class="d-count" id="diaper-dirty-count">0</div>
+          <div class="d-count" x-text="diaperDirty"></div>
           <div class="d-sub">aujourd'hui</div>
         </button>
       </div>
     </div>
+
     <div class="section-label">Tout l'historique</div>
-    <div id="diaper-history"></div>
+
+    <!-- Historique couches -->
+    <div x-show="diaperGroups.length === 0" class="empty-state">Aucun changement enregistré</div>
+    <template x-for="group in diaperGroups" :key="group.label">
+      <div class="day-group">
+        <div class="day-group-label" x-text="group.label"></div>
+        <div class="history-list">
+          <template x-for="log in group.logs" :key="log.id">
+            <div class="history-item" :class="{pending: isPending(log.id)}" @click="openEdit(log.id)">
+              <div class="h-dot" :class="log.diaperType"></div>
+              <div class="h-main">
+                <div class="h-label" x-text="diaperLabel(log.diaperType)"></div>
+                <div class="h-range" x-text="fmtTime(log.timestamp)"></div>
+              </div>
+              <div class="h-edit-hint">✎</div>
+            </div>
+          </template>
+        </div>
+      </div>
+    </template>
   </div>
 
-  <!-- CALENDRIER -->
-  <div class="section" id="section-timeline">
+  <!-- ╔═════════════╗ -->
+  <!-- ║  CALENDRIER ║ -->
+  <!-- ╚═════════════╝ -->
+  <div class="section" :class="{active: currentTab==='timeline'}" id="section-timeline">
     <button class="export-btn" onclick="exportCSV()">
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
       Exporter en CSV
     </button>
+
     <div class="tl-nav">
-      <button class="tl-nav-btn" id="tl-nav-prev" onclick="tlNav(+1)">‹</button>
-      <div class="tl-nav-label" id="tl-nav-label">—</div>
-      <button class="tl-nav-btn" id="tl-nav-next" onclick="tlNav(-1)">›</button>
+      <button class="tl-nav-btn" :disabled="tlPrevDisabled" onclick="tlNav(+1)">‹</button>
+      <div class="tl-nav-label" x-text="tlNavLabel"></div>
+      <button class="tl-nav-btn" :disabled="tlNextDisabled" onclick="tlNav(-1)">›</button>
     </div>
     <div class="tl-swipe-hint">← glisser pour naviguer →</div>
+
     <div class="card" style="padding:12px 14px;margin-bottom:14px">
       <div class="tl-legend" style="padding:0;border:none">
         <div class="tl-leg-item"><div class="tl-leg-bar left"></div>Sein gauche</div>
         <div class="tl-leg-item"><div class="tl-leg-bar right"></div>Sein droit</div>
         <div class="tl-leg-item"><div class="tl-leg-bar sleep"></div>Sommeil</div>
-        <div class="tl-leg-item"><div class="tl-leg-dot wet" style="border:none"></div>Pipi</div>
+        <div class="tl-leg-item"><div class="tl-leg-dot wet"   style="border:none"></div>Pipi</div>
         <div class="tl-leg-item"><div class="tl-leg-dot dirty" style="border:none"></div>Selle</div>
       </div>
     </div>
-    <div id="timeline-container"></div>
+
+    <!-- Timeline (x-for sur les barres/points) -->
+    <div id="timeline-container" :class="{swiping: tlSwiping}">
+      <div x-show="tlEmpty" class="empty-state">Aucune donnée</div>
+      <div class="timeline-day" x-show="!tlEmpty">
+        <div class="tl-body" style="padding-top:20px">
+
+          <!-- Graduation horaire -->
+          <div class="tl-ticks-row">
+            <div class="tl-tick-spacer"></div>
+            <div class="tl-ticks">
+              <template x-for="h in [0,6,12,18,24]" :key="h">
+                <div class="tl-tick" :style="`left:${(h/24*100).toFixed(1)}%`">
+                  <div class="tl-tick-line"></div>
+                  <div class="tl-tick-lbl" x-text="String(h).padStart(2,'0')+'h'"></div>
+                </div>
+              </template>
+            </div>
+          </div>
+
+          <!-- Barres allaitement -->
+          <div class="tl-row" x-show="tlHasFeed">
+            <div class="tl-row-label">🤱</div>
+            <div class="tl-track feed-track">
+              <template x-for="bar in tlFeedBars" :key="bar.id">
+                <div class="tl-bar" :class="bar.side"
+                     :style="`left:${bar.left}%;width:${bar.width}%`"></div>
+              </template>
+            </div>
+          </div>
+
+          <!-- Barres sommeil -->
+          <div class="tl-row" x-show="tlHasSleep">
+            <div class="tl-row-label">🌙</div>
+            <div class="tl-track sleep-track">
+              <template x-for="bar in tlSleepBars" :key="bar.id">
+                <div class="tl-bar sleep"
+                     :style="`left:${bar.left}%;width:${bar.width}%`"></div>
+              </template>
+            </div>
+          </div>
+
+          <!-- Points couches -->
+          <div class="tl-row" x-show="tlHasDiaper">
+            <div class="tl-row-label">💧</div>
+            <div class="tl-track diaper-track">
+              <template x-for="dot in tlDiaperDots" :key="dot.id">
+                <div class="tl-dot" :class="dot.type"
+                     :style="`left:${dot.left}%`"></div>
+              </template>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
   </div>
 
 </div><!-- /.content -->
 
-<!-- ── TABS ── -->
+<!-- ── ONGLETS ── -->
 <div class="tabs">
-  <button class="tab active" id="tab-feed" onclick="switchTab('feed')">
+  <button class="tab" :class="{active: currentTab==='feed'}"     onclick="switchTab('feed')">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2C8 2 5 5 5 9c0 5 7 13 7 13s7-8 7-13c0-4-3-7-7-7z"/><circle cx="12" cy="9" r="2.5"/></svg>
     Allaitement<div class="tab-dot"></div>
   </button>
-  <button class="tab" id="tab-sleep" onclick="switchTab('sleep')">
+  <button class="tab" :class="{active: currentTab==='sleep'}"    onclick="switchTab('sleep')">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
     Sommeil<div class="tab-dot"></div>
   </button>
-  <button class="tab" id="tab-diaper" onclick="switchTab('diaper')">
+  <button class="tab" :class="{active: currentTab==='diaper'}"   onclick="switchTab('diaper')">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="8" width="18" height="10" rx="3"/><path d="M3 11h18M8 8V6a4 4 0 0 1 8 0v2"/></svg>
     Couches<div class="tab-dot"></div>
   </button>
-  <button class="tab" id="tab-timeline" onclick="switchTab('timeline')">
+  <button class="tab" :class="{active: currentTab==='timeline'}" onclick="switchTab('timeline')">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/><line x1="9" y1="9" x2="9" y2="22"/></svg>
     Calendrier<div class="tab-dot"></div>
   </button>
 </div>
 
-<!-- ── MODAL EDIT ── -->
-<div class="modal-overlay" id="modal-overlay" onclick="closeEditModal(event)">
+<!-- ── MODALE ÉDITION ── -->
+<div class="modal-overlay" id="modal-overlay" :class="{open: editModalOpen}" onclick="closeEditModal(event)">
   <div class="modal">
     <div class="modal-handle"></div>
     <div class="modal-title">Modifier</div>
@@ -170,22 +300,41 @@
     <div class="modal-actions">
       <button class="btn btn-delete" onclick="deleteEntry()">Supprimer</button>
       <button class="btn btn-cancel" onclick="closeEditModal()">Annuler</button>
-      <button class="btn btn-save" onclick="saveEntry()">Enregistrer</button>
+      <button class="btn btn-save"   onclick="saveEntry()">Enregistrer</button>
     </div>
   </div>
 </div>
 
-<!-- ── MODAL PROFILS ── -->
-<div class="modal-overlay" id="profile-modal" onclick="closeProfileModal(event)">
+<!-- ── MODALE PROFILS ── -->
+<div class="modal-overlay" id="profile-modal" :class="{open: profileModalOpen}" onclick="closeProfileModal(event)">
   <div class="modal">
     <div class="modal-handle"></div>
     <div class="modal-title">Profils enfants</div>
-    <div class="profile-list" id="profile-list"></div>
-    <div style="display:flex;gap:10px;margin-top:4px">
-      <button class="btn btn-save" style="flex:1" onclick="openAddProfileForm()">+ Ajouter</button>
-      <button class="btn btn-delete" style="flex:none;padding:13px 16px" onclick="confirmReset()" title="Réinitialiser les données">🗑 Reset</button>
+
+    <!-- Liste des profils en x-for -->
+    <div class="profile-list">
+      <template x-for="p in profileList" :key="p.id">
+        <div class="profile-item" :class="{'active-profile': p.id === activeProfileId}"
+             @click="switchToProfile(p.id)">
+          <div class="profile-item-emoji" x-text="p.emoji"></div>
+          <div class="profile-item-info">
+            <div class="profile-item-name" x-text="p.name"></div>
+            <div class="profile-item-sub"  x-text="p.familyId ? 'Synchronisé' : 'Local uniquement'"></div>
+          </div>
+          <div class="profile-item-badge" x-show="p.id === activeProfileId">Actif</div>
+          <button class="profile-item-edit"
+                  @click.stop="openEditProfile(p.id)">✎</button>
+        </div>
+      </template>
     </div>
-    <div id="profile-form" style="display:none;margin-top:16px">
+
+    <div style="display:flex;gap:10px;margin-top:4px">
+      <button class="btn btn-save"   style="flex:1"            onclick="openAddProfileForm()">+ Ajouter</button>
+      <button class="btn btn-delete" style="flex:none;padding:13px 16px" onclick="confirmReset()" title="Réinitialiser">🗑 Reset</button>
+    </div>
+
+    <!-- Formulaire nouveau/édition profil -->
+    <div x-show="profileFormVisible" style="margin-top:16px">
       <hr style="border:none;border-top:1px solid var(--border);margin-bottom:16px"/>
       <div class="modal-field">
         <label>Prénom</label>
@@ -193,53 +342,68 @@
       </div>
       <div class="modal-field">
         <label>Emoji</label>
-        <div class="emoji-grid" id="emoji-grid"></div>
+        <!-- Grille emoji en x-for -->
+        <div class="emoji-grid">
+          <template x-for="e in emojis" :key="e">
+            <div class="emoji-opt" :class="{selected: selectedEmoji === e}"
+                 @click="selectedEmoji = e" x-text="e"></div>
+          </template>
+        </div>
       </div>
       <div class="modal-actions" style="margin-top:0">
         <button class="btn btn-cancel" onclick="closeProfileForm()">Annuler</button>
-        <button class="btn btn-save" onclick="saveProfile()">Créer</button>
+        <button class="btn btn-save"   onclick="saveProfile()"
+                x-text="profileFormMode === 'create' ? 'Créer' : 'Enregistrer'"></button>
       </div>
     </div>
   </div>
 </div>
 
-<!-- ── MODAL SYNC / FAMILLE ── -->
-<div class="modal-overlay" id="sync-modal">
+<!-- ── MODALE SYNC / FAMILLE ── -->
+<div class="modal-overlay" :class="{open: syncModalOpen}">
   <div class="modal center" style="width:90%">
     <div class="modal-title" style="text-align:center;font-size:20px;">👶 Synchronisation</div>
-    <p style="font-size:14px;color:var(--text-muted);text-align:center;margin-bottom:20px;line-height:1.4">Créez une famille pour partager avec l'autre parent, ou rejoignez-en une existante.</p>
+    <p style="font-size:14px;color:var(--text-muted);text-align:center;margin-bottom:20px;line-height:1.4">
+      Créez une famille pour partager avec l'autre parent, ou rejoignez-en une existante.
+    </p>
     <div style="display:flex;flex-direction:column;gap:12px;">
       <button class="btn btn-save" onclick="createFamily()">Créer ma famille</button>
       <div style="text-align:center;color:var(--text-muted);font-size:12px;margin:2px 0">— ou —</div>
-      <input type="text" id="invite-code" placeholder="Coller un code d'invitation…" style="width:100%;border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px;font-size:14px;text-align:center;"/>
+      <input type="text" id="invite-code" placeholder="Coller un code d'invitation…"
+             style="width:100%;border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px;font-size:14px;text-align:center;"/>
       <button class="btn btn-cancel" style="border:1px solid var(--border)" onclick="joinFamily()">Rejoindre avec le code</button>
       <button class="btn btn-cancel" style="opacity:.6;font-size:12px" onclick="skipSync()">Continuer sans synchronisation</button>
     </div>
   </div>
 </div>
 
-<!-- ── MODAL PARTAGE ── -->
-<div class="modal-overlay" id="share-modal" onclick="closeShareModal(event)">
+<!-- ── MODALE PARTAGE ── -->
+<div class="modal-overlay" id="share-modal" :class="{open: shareModalOpen}" onclick="closeShareModal(event)">
   <div class="modal center" style="width:90%">
     <div class="modal-title" style="text-align:center;">Partager l'accès</div>
-    <p style="font-size:13px;color:var(--text-muted);text-align:center;margin-bottom:20px;">Scannez ce QR Code avec l'autre téléphone ou partagez le lien.</p>
-    <img id="qr-code" src="" alt="QR Code" style="width:180px;height:180px;margin:0 auto 20px;display:block;border-radius:12px;border:1px solid var(--border);padding:10px;"/>
+    <p style="font-size:13px;color:var(--text-muted);text-align:center;margin-bottom:20px;">
+      Scannez ce QR Code avec l'autre téléphone ou partagez le lien.
+    </p>
+    <img :src="shareQrUrl" alt="QR Code"
+         style="width:180px;height:180px;margin:0 auto 20px;display:block;border-radius:12px;border:1px solid var(--border);padding:10px;"/>
     <div style="display:flex;gap:10px;">
-      <input type="text" id="share-link-input" readonly style="flex:1;border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px;font-size:12px;background:var(--bg);color:var(--text-muted)"/>
+      <input type="text" :value="shareLink" readonly
+             style="flex:1;border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px;font-size:12px;background:var(--bg);color:var(--text-muted)"/>
       <button class="btn btn-save" style="flex:none;padding:10px 14px;font-size:12px" onclick="copyShareLink()">Copier</button>
     </div>
     <button class="btn btn-cancel" style="margin-top:14px;width:100%" onclick="closeShareModal()">Fermer</button>
   </div>
 </div>
 
-<div class="toast" id="toast"></div>
+<!-- Toast -->
+<div class="toast" :class="{show: toastVisible}" x-text="toastMsg"></div>
 
-<!-- ── SCRIPTS (all at root level, versioned) ── -->
-<script src="utils.js?v=15"></script>
-<script src="db.js?v=15"></script>
-<script src="state.js?v=15"></script>
-<script src="render.js?v=15"></script>
-<script src="sync.js?v=15"></script>
-<script src="app.js?v=15"></script>
+<!-- ── SCRIPTS (versionnés) ── -->
+<script src="utils.js?v=16"></script>
+<script src="db.js?v=16"></script>
+<script src="state.js?v=16"></script>
+<script src="render.js?v=16"></script>
+<script src="sync.js?v=16"></script>
+<script src="app.js?v=16"></script>
 </body>
 </html>
