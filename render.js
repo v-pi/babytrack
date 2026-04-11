@@ -23,6 +23,21 @@ function startLastFeedTick() {
   });
 }
 
+/** Returns sorted unique day keys (toDateString()), most recent first. */
+function getHistDays(logs) {
+  const keys = [...new Set(logs.map(l => new Date(l.timestamp || l.start).toDateString()))];
+  return keys.sort((a, b) => new Date(b) - new Date(a));
+}
+
+/** Renders the day nav bar HTML for a history section. */
+function renderHistNav(type, idx, days) {
+  return `<div class="hist-nav">
+    <button class="hist-nav-btn" onclick="histNav('${type}',+1)" ${idx >= days.length - 1 ? 'disabled' : ''}>‹</button>
+    <span class="hist-nav-label">${fmtDayLabel(new Date(days[idx]))}</span>
+    <button class="hist-nav-btn" onclick="histNav('${type}',-1)" ${idx <= 0 ? 'disabled' : ''}>›</button>
+  </div>`;
+}
+
 function renderFeed() {
   const tl = todayLogs().filter(l => l.type === 'feed');
   document.getElementById('sum-feed-count').textContent = tl.length;
@@ -35,17 +50,21 @@ function renderFeed() {
     el.textContent = fmtTime(last.start) + ' · ' + fmtDur(last.duration);
   });
   const el   = document.getElementById('feed-history');
-  const logs = allLogs.filter(l => l.type === 'feed').sort((a,b) => (b.start||b.timestamp)-(a.start||a.timestamp));
-  if (!logs.length) { el.innerHTML = '<div class="empty-state">Aucune tétée enregistrée</div>'; startLastFeedTick(); return; }
-  el.innerHTML = groupByDay(logs).map(g => `
-    <div class="day-group"><div class="day-group-label">${g.label}</div><div class="history-list">
-    ${g.logs.map(l => `<div class="history-item${pendingSyncIds.has(l.id)?' pending':''}" onclick="openEdit('${l.id}')">
+  const logs = allLogs.filter(l => l.type === 'feed');
+  const days = getHistDays(logs);
+  if (!days.length) { el.innerHTML = '<div class="empty-state">Aucune tétée enregistrée</div>'; startLastFeedTick(); return; }
+  histDay.feed = Math.max(0, Math.min(histDay.feed, days.length - 1));
+  const dayLogs = logs
+    .filter(l => new Date(l.timestamp || l.start).toDateString() === days[histDay.feed])
+    .sort((a, b) => (b.start || b.timestamp) - (a.start || a.timestamp));
+  el.innerHTML = renderHistNav('feed', histDay.feed, days) +
+    '<div class="history-list">' +
+    dayLogs.map(l => `<div class="history-item${pendingSyncIds.has(l.id)?' pending':''}" onclick="openEdit('${l.id}')">
       <div class="h-dot ${l.side}"></div>
       <div class="h-main"><div class="h-label">Sein ${l.side==='left'?'gauche':'droit'}</div>
       <div class="h-range">${fmtTime(l.start)} → ${fmtTime(l.end)}</div></div>
       <div class="h-dur">${fmtDur(l.duration)}</div><div class="h-edit-hint">✎</div>
-    </div>`).join('')}
-    </div></div>`).join('');
+    </div>`).join('') + '</div>';
   startLastFeedTick();
 }
 
@@ -54,17 +73,21 @@ function renderSleep() {
   document.getElementById('sum-sleep-count').textContent = tl.length;
   document.getElementById('sum-sleep-total').textContent = fmtDur(tl.reduce((a,l) => a+(l.duration||0), 0));
   const el   = document.getElementById('sleep-history');
-  const logs = allLogs.filter(l => l.type === 'sleep').sort((a,b) => (b.start||b.timestamp)-(a.start||a.timestamp));
-  if (!logs.length) { el.innerHTML = '<div class="empty-state">Aucun sommeil enregistré</div>'; return; }
-  el.innerHTML = groupByDay(logs).map(g => `
-    <div class="day-group"><div class="day-group-label">${g.label}</div><div class="history-list">
-    ${g.logs.map(l => `<div class="history-item${pendingSyncIds.has(l.id)?' pending':''}" onclick="openEdit('${l.id}')">
+  const logs = allLogs.filter(l => l.type === 'sleep');
+  const days = getHistDays(logs);
+  if (!days.length) { el.innerHTML = '<div class="empty-state">Aucun sommeil enregistré</div>'; return; }
+  histDay.sleep = Math.max(0, Math.min(histDay.sleep, days.length - 1));
+  const dayLogs = logs
+    .filter(l => new Date(l.timestamp || l.start).toDateString() === days[histDay.sleep])
+    .sort((a, b) => (b.start || b.timestamp) - (a.start || a.timestamp));
+  el.innerHTML = renderHistNav('sleep', histDay.sleep, days) +
+    '<div class="history-list">' +
+    dayLogs.map(l => `<div class="history-item${pendingSyncIds.has(l.id)?' pending':''}" onclick="openEdit('${l.id}')">
       <div class="h-dot sleep"></div>
       <div class="h-main"><div class="h-label">Sommeil</div>
       <div class="h-range">${fmtTime(l.start)} → ${fmtTime(l.end)}</div></div>
       <div class="h-dur">${fmtDur(l.duration)}</div><div class="h-edit-hint">✎</div>
-    </div>`).join('')}
-    </div></div>`).join('');
+    </div>`).join('') + '</div>';
 }
 
 function renderDiapers() {
@@ -72,17 +95,21 @@ function renderDiapers() {
   document.getElementById('diaper-wet-count').textContent   = tl.filter(l => l.diaperType === 'wet').length;
   document.getElementById('diaper-dirty-count').textContent = tl.filter(l => l.diaperType === 'dirty').length;
   const el   = document.getElementById('diaper-history');
-  const logs = allLogs.filter(l => l.type === 'diaper').sort((a,b) => b.timestamp - a.timestamp);
-  if (!logs.length) { el.innerHTML = '<div class="empty-state">Aucun changement enregistré</div>'; return; }
-  el.innerHTML = groupByDay(logs).map(g => `
-    <div class="day-group"><div class="day-group-label">${g.label}</div><div class="history-list">
-    ${g.logs.map(l => `<div class="history-item${pendingSyncIds.has(l.id)?' pending':''}" onclick="openEdit('${l.id}')">
+  const logs = allLogs.filter(l => l.type === 'diaper');
+  const days = getHistDays(logs);
+  if (!days.length) { el.innerHTML = '<div class="empty-state">Aucun changement enregistré</div>'; return; }
+  histDay.diaper = Math.max(0, Math.min(histDay.diaper, days.length - 1));
+  const dayLogs = logs
+    .filter(l => new Date(l.timestamp || l.start).toDateString() === days[histDay.diaper])
+    .sort((a, b) => b.timestamp - a.timestamp);
+  el.innerHTML = renderHistNav('diaper', histDay.diaper, days) +
+    '<div class="history-list">' +
+    dayLogs.map(l => `<div class="history-item${pendingSyncIds.has(l.id)?' pending':''}" onclick="openEdit('${l.id}')">
       <div class="h-dot ${l.diaperType}"></div>
       <div class="h-main"><div class="h-label">${l.diaperType==='wet'?'💧 Pipi':'💩 Selle'}</div>
       <div class="h-range">${fmtTime(l.timestamp)}</div></div>
       <div class="h-edit-hint">✎</div>
-    </div>`).join('')}
-    </div></div>`).join('');
+    </div>`).join('') + '</div>';
 }
 
 // ── TIMELINE ─────────────────────────────────────────────────────────────────

@@ -20,6 +20,7 @@ let editingProfileId = null;
 let currentTab       = 'feed';
 let toastTO;
 let tlDayIndex = 0, tlDays = [];
+let histDay = { feed: 0, sleep: 0, diaper: 0 };
 const TICK_LAST_FEED = 'last-feed-global';
 
 // ── SYNC QUEUES (Sauvegarde locale des actions en attente) ───────────────────
