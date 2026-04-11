@@ -16,6 +16,16 @@ html{height:100%}
   --tab-h:58px;
 }
 
+[data-theme="dark"]{
+  --pink:#f07ab0;--pink-light:#2e1a24;--pink-mid:#3d2030;
+  --blue:#7aabf0;--blue-light:#1a2236;
+  --green:#5fcb97;--green-light:#162a22;
+  --amber:#f0c070;--amber-light:#2a2010;
+  --text:#f0eef2;--text-muted:#9990a8;
+  --bg:#0f0e11;--card:#1c1a20;--border:#2e2b35;
+  --shadow:0 1px 8px rgba(0,0,0,.35);
+}
+
 body{
   font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
   background:var(--bg);color:var(--text);
@@ -54,7 +64,7 @@ body{
 .sync-dot.error{background:#e05;animation:none}
 
 .header-right{display:flex;align-items:center;gap:10px}
-.hdate{font-size:12px;color:var(--text-muted)}
+.hdate{display:none}
 
 /* ── CONTENT ── */
 .content{
@@ -231,18 +241,6 @@ body{
 #timeline-container{transition:opacity .15s}
 #timeline-container.swiping{opacity:0}
 
-
-/* ── HISTORY NAV ── */
-.hist-nav{display:flex;align-items:center;margin-bottom:12px}
-.hist-nav-btn{
-  border:none;background:none;cursor:pointer;
-  font-size:22px;color:var(--pink);padding:4px 10px;
-  border-radius:8px;line-height:1;transition:opacity .15s;flex-shrink:0;
-}
-.hist-nav-btn:active{opacity:.5}
-.hist-nav-btn:disabled{color:var(--border);cursor:default}
-.hist-nav-label{font-size:14px;font-weight:700;color:var(--text);flex:1;text-align:center}
-
 /* ── MODALS ── */
 .modal-overlay{
   position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:100;
@@ -309,6 +307,15 @@ body{
 .emoji-opt.selected{border-color:var(--pink);background:var(--pink-light)}
 
 /* ── MISC ── */
+
+/* ── THEME TOGGLE ── */
+.theme-toggle{
+  background:none;border:none;cursor:pointer;
+  padding:4px;color:var(--text-muted);
+  font-size:18px;line-height:1;
+  transition:transform .25s;
+}
+.theme-toggle:active{transform:scale(.85)}
 .share-icon{background:none;border:none;color:var(--pink);cursor:pointer;padding:5px}
 .toast{
   position:fixed;
@@ -320,13 +327,6 @@ body{
 }
 .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
 
-
-/* ── DESKTOP: modal centré verticalement ── */
-@media (min-width: 600px) {
-  .modal-overlay{align-items:center}
-  .modal{border-radius:20px;transform:translateY(20px)}
-  .modal-overlay.open .modal{transform:translateY(0)}
-}
 /* ── ANIMATIONS ── */
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.55}}
 .running .b-timer,.sleeping .sleep-timer{animation:pulse 2s infinite}
@@ -337,3 +337,7 @@ body{
   body { overscroll-behavior-y: none; }
   .content { overscroll-behavior-y: contain; }
 }
+[data-theme="dark"] .modal-field input[type=time],
+[data-theme="dark"] .modal-field input[type=date],
+[data-theme="dark"] .modal-field input[type=text]{color-scheme:dark}
+[data-theme="dark"] #invite-code{color-scheme:dark}

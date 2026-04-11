@@ -1,3 +1,14 @@
+// ── THEME ─────────────────────────────────────────────────────────────────────
+function applyTheme(dark) {
+  document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+  document.getElementById('btn-theme').textContent = dark ? '☀️' : '🌙';
+}
+function toggleTheme() {
+  const dark = document.documentElement.getAttribute('data-theme') !== 'dark';
+  localStorage.setItem('bt_theme', dark ? 'dark' : 'light');
+  applyTheme(dark);
+}
+
 // ── app.js ────────────────────────────────────────────────────────────────────
 // Orchestration: init, timer toggle handlers, tab/UI management, modals, events.
 // Depends on state.js, render.js, utils.js, db.js, sync.js.
@@ -5,9 +16,7 @@
 
 // ── INIT ─────────────────────────────────────────────────────────────────────
 window.onload = async () => {
-  document.getElementById('today-date').textContent =
-    new Date().toLocaleDateString('fr-FR', { weekday:'short', day:'numeric', month:'short' });
-
+  applyTheme(localStorage.getItem('bt_theme') === 'dark');
   await openDB();
   loadProfiles();
   updateHeaderProfile();
@@ -146,19 +155,6 @@ function switchTab(name, silent) {
   // Always scroll to top so pull-to-refresh works on every tab
   document.querySelector('.content').scrollTop = 0;
   if (!silent && name === 'timeline') renderTimeline();
-}
-
-
-// ── HISTORY NAV ───────────────────────────────────────────────────────────────
-function histNav(type, delta) {
-  const logs = allLogs.filter(l => l.type === type);
-  const days  = getHistDays(logs);
-  const newIdx = histDay[type] + delta;
-  if (newIdx < 0 || newIdx >= days.length) return;
-  histDay[type] = newIdx;
-  if      (type === 'feed')   renderFeed();
-  else if (type === 'sleep')  renderSleep();
-  else if (type === 'diaper') renderDiapers();
 }
 
 // ── TOAST ─────────────────────────────────────────────────────────────────────
@@ -373,26 +369,6 @@ document.addEventListener('visibilitychange', () => {
     const dx = e.changedTouches[0].screenX - startX;
     if (Math.abs(dx) > 50) tlNav(dx > 0 ? +1 : -1);
   }, { passive: true });
-})();
-
-
-// ── SWIPE (HISTORY sections) ──────────────────────────────────────────────────
-(function setupHistorySwipe() {
-  [['section-feed','feed'],['section-sleep','sleep'],['section-diaper','diaper']].forEach(([id, type]) => {
-    const el = document.getElementById(id);
-    let sx = 0, sy = 0;
-    el.addEventListener('touchstart', e => {
-      sx = e.changedTouches[0].screenX;
-      sy = e.changedTouches[0].screenY;
-    }, { passive: true });
-    el.addEventListener('touchend', e => {
-      const dx = e.changedTouches[0].screenX - sx;
-      const dy = e.changedTouches[0].screenY - sy;
-      // Ne déclencher que si le geste est majoritairement horizontal
-      if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy))
-        histNav(type, dx > 0 ? +1 : -1);
-    }, { passive: true });
-  });
 })();
 
 // ── SERVICE WORKER ────────────────────────────────────────────────────────────
