@@ -144,7 +144,7 @@ function switchTab(name, silent) {
   currentTab = name;
   sessionStorage.setItem('bt_tab', name);
   // Always scroll to top so pull-to-refresh works on every tab
-  document.querySelector('.content').scrollTop = 0;
+  window.scrollTo(0, 0);
   if (!silent && name === 'timeline') renderTimeline();
 }
 
