@@ -13,7 +13,7 @@
   <script>
     (function(){var t=localStorage.getItem('bt_theme');if(t==='dark')document.documentElement.setAttribute('data-theme','dark');})();
   </script>
-  <link rel="stylesheet" href="main.css?v=18"/>
+  <link rel="stylesheet" href="main.css?v=26"/>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>
@@ -102,17 +102,20 @@
     <div class="card">
       <div class="card-title">Changement de couche</div>
       <div class="diaper-grid">
-        <button class="diaper-btn wet" onclick="logDiaper('wet')">
+        <button class="diaper-btn wet" id="btn-diaper-wet" onclick="toggleDiaper('wet')">
           <div class="d-icon">💧</div><div class="d-label">Pipi</div>
           <div class="d-count" id="diaper-wet-count">0</div>
           <div class="d-sub">aujourd'hui</div>
         </button>
-        <button class="diaper-btn dirty" onclick="logDiaper('dirty')">
+        <button class="diaper-btn dirty" id="btn-diaper-dirty" onclick="toggleDiaper('dirty')">
           <div class="d-icon">💩</div><div class="d-label">Selle</div>
           <div class="d-count" id="diaper-dirty-count">0</div>
           <div class="d-sub">aujourd'hui</div>
         </button>
       </div>
+      <button class="diaper-validate" id="diaper-validate" onclick="validateDiaper()">
+        Valider le changement ✓
+      </button>
     </div>
     <div class="section-label">Tout l'historique</div>
     <div id="diaper-history"></div>
@@ -124,12 +127,7 @@
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
       Exporter en CSV
     </button>
-    <div class="tl-nav">
-      <button class="tl-nav-btn" id="tl-nav-prev" onclick="tlNav(+1)">‹</button>
-      <div class="tl-nav-label" id="tl-nav-label">—</div>
-      <button class="tl-nav-btn" id="tl-nav-next" onclick="tlNav(-1)">›</button>
-    </div>
-    <div class="tl-swipe-hint">← glisser pour naviguer →</div>
+    <div id="tl-day-nav"></div>
     <div class="card" style="padding:12px 14px;margin-bottom:14px">
       <div class="tl-legend" style="padding:0;border:none">
         <div class="tl-leg-item"><div class="tl-leg-bar left"></div>Sein gauche</div>
@@ -238,11 +236,11 @@
 <div class="toast" id="toast"></div>
 
 <!-- ── SCRIPTS (all at root level, versioned) ── -->
-<script src="utils.js?v=18"></script>
-<script src="db.js?v=18"></script>
-<script src="state.js?v=18"></script>
-<script src="render.js?v=18"></script>
-<script src="sync.js?v=18"></script>
-<script src="app.js?v=18"></script>
+<script src="utils.js?v=26"></script>
+<script src="db.js?v=26"></script>
+<script src="state.js?v=26"></script>
+<script src="render.js?v=26"></script>
+<script src="sync.js?v=26"></script>
+<script src="app.js?v=26"></script>
 </body>
 </html>

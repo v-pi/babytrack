@@ -18,6 +18,7 @@ let ticks            = {};
 let editingLog       = null;
 let editingProfileId = null;
 let currentTab       = 'feed';
+let diaperSelection = { wet: false, dirty: false };
 let toastTO;
 let tlDayIndex = 0, tlDays = [];
 let histDay = { feed: 0, sleep: 0, diaper: 0 };
@@ -144,11 +145,6 @@ function stopAllActive(except) {
     stopSleepTimerLocal();
     setRemoteTimer('sleep', null, null);
   }
-}
-
-function logDiaper(type) {
-  logAction({ type:'diaper', diaperType:type, timestamp:Date.now() });
-  showToast(type === 'wet' ? '💧 Couche pipi' : '💩 Couche selle');
 }
 
 // ── SESSION (local timer persistence across page reloads) ─────────────────────

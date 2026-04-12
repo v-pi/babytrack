@@ -140,6 +140,52 @@ function stopSleepTimerLocal() {
   saveSession();
 }
 
+
+// ── COUCHES ───────────────────────────────────────────────────────────────────
+function toggleDiaper(type) {
+  diaperSelection[type] = !diaperSelection[type];
+  const btn = document.getElementById('btn-diaper-' + type);
+  btn.classList.toggle('pressed', diaperSelection[type]);
+  document.getElementById('diaper-validate').classList.toggle(
+    'visible', diaperSelection.wet || diaperSelection.dirty
+  );
+}
+
+function validateDiaper() {
+  const { wet, dirty } = diaperSelection;
+  if (!wet && !dirty) return;
+  const diaperType = wet && dirty ? 'mixed' : wet ? 'wet' : 'dirty';
+  const labels = { wet:'💧 Pipi', dirty:'💩 Selle', mixed:'💧💩 Mixte' };
+  logAction({ type:'diaper', diaperType, timestamp:Date.now() });
+  showToast(labels[diaperType]);
+  // Reset selection
+  diaperSelection.wet = false;
+  diaperSelection.dirty = false;
+  document.getElementById('btn-diaper-wet').classList.remove('pressed');
+  document.getElementById('btn-diaper-dirty').classList.remove('pressed');
+  document.getElementById('diaper-validate').classList.remove('visible');
+}
+
+// ── DAY NAVIGATION (unified) ─────────────────────────────────────────────────
+function dayNav(section, delta) {
+  if (section === 'timeline') {
+    const newIdx = tlDayIndex + delta;
+    if (newIdx < 0 || newIdx >= tlDays.length) return;
+    const c = document.getElementById('timeline-container');
+    c.classList.add('swiping');
+    setTimeout(() => { tlDayIndex = newIdx; renderTimeline(); c.classList.remove('swiping'); }, 150);
+  } else {
+    const logs = allLogs.filter(l => l.type === section);
+    const days = getHistDays(logs);
+    const newIdx = histDay[section] + delta;
+    if (newIdx < 0 || newIdx >= days.length) return;
+    histDay[section] = newIdx;
+    if      (section === 'feed')   renderFeed();
+    else if (section === 'sleep')  renderSleep();
+    else if (section === 'diaper') renderDiapers();
+  }
+}
+
 // ── TABS ─────────────────────────────────────────────────────────────────────
 /**
  * @param {string} name - tab name
@@ -153,7 +199,7 @@ function switchTab(name, silent) {
   currentTab = name;
   sessionStorage.setItem('bt_tab', name);
   // Always scroll to top so pull-to-refresh works on every tab
-  document.querySelector('.content').scrollTop = 0;
+  window.scrollTo(0, 0);
   if (!silent && name === 'timeline') renderTimeline();
 }
 
@@ -175,7 +221,7 @@ function exportCSV() {
     rows.push([
       new Date(ts).toLocaleDateString('fr-FR'), fmtTime(ts),
       l.type==='feed'?'allaitement':l.type==='sleep'?'sommeil':'couche',
-      l.type==='feed'?(l.side==='left'?'gauche':'droit'):l.type==='diaper'?(l.diaperType==='wet'?'pipi':'selle'):'',
+      l.type==='feed'?(l.side==='left'?'gauche':'droit'):l.type==='diaper'?(l.diaperType==='wet'?'pipi':l.diaperType==='dirty'?'selle':'mixte'):'',
       l.duration ? fmtDur(l.duration) : ''
     ]);
   });
@@ -307,9 +353,19 @@ function openEdit(id) {
   if (!editingLog) return;
   const b = document.getElementById('modal-body');
   if (editingLog.type === 'diaper') {
+    const dtypes = ['wet','dirty','mixed'];
+    const dlabels = { wet:'💧 Pipi', dirty:'💩 Selle', mixed:'💧💩 Mixte' };
     b.innerHTML = `<div class="modal-row">
       <div class="modal-field"><label>Date</label><input type="date" id="ed-d" value="${fmtYMD(editingLog.timestamp)}"/></div>
       <div class="modal-field"><label>Heure</label><input type="time" id="ed-t" value="${fmtHM(editingLog.timestamp)}"/></div>
+    </div>
+    <div class="modal-field"><label>Type</label>
+      <div style="display:flex;gap:8px;margin-top:4px">
+        ${dtypes.map(t => `<button onclick="setEditDiaperType('${t}',this)" id="ed-dtype-${t}"
+          style="flex:1;padding:10px 6px;border-radius:10px;border:2px solid ${editingLog.diaperType===t?'var(--pink)':'var(--border)'};
+          background:${editingLog.diaperType===t?'var(--pink-light)':'var(--bg)'};font-size:13px;font-weight:600;cursor:pointer">
+          ${dlabels[t]}</button>`).join('')}
+      </div>
     </div>`;
   } else {
     b.innerHTML = `<div class="modal-row">
@@ -322,6 +378,17 @@ function openEdit(id) {
   }
   document.getElementById('modal-overlay').classList.add('open');
 }
+function setEditDiaperType(type, btn) {
+  editingLog.diaperType = type;
+  ['wet','dirty','mixed'].forEach(t => {
+    const b = document.getElementById('ed-dtype-'+t);
+    if (b) {
+      b.style.borderColor = t === type ? 'var(--pink)' : 'var(--border)';
+      b.style.background  = t === type ? 'var(--pink-light)' : 'var(--bg)';
+    }
+  });
+}
+
 function closeEditModal(e) {
   if (e && e.target !== document.getElementById('modal-overlay')) return;
   document.getElementById('modal-overlay').classList.remove('open');
@@ -360,15 +427,23 @@ document.addEventListener('visibilitychange', () => {
   }
 });
 
-// ── SWIPE (TIMELINE only) ─────────────────────────────────────────────────────
-(function setupSwipe() {
-  const section = document.getElementById('section-timeline');
-  let startX = 0;
-  section.addEventListener('touchstart', e => { startX = e.changedTouches[0].screenX; }, { passive: true });
-  section.addEventListener('touchend',   e => {
-    const dx = e.changedTouches[0].screenX - startX;
-    if (Math.abs(dx) > 50) tlNav(dx > 0 ? +1 : -1);
+// ── SWIPE (all sections, unified) ────────────────────────────────────────────
+(function setupDaySwipe() {
+  [['section-feed','feed'],['section-sleep','sleep'],
+   ['section-diaper','diaper'],['section-timeline','timeline']].forEach(([id, section]) => {
+    const el = document.getElementById(id);
+    let sx = 0, sy = 0;
+    el.addEventListener('touchstart', e => {
+      sx = e.changedTouches[0].screenX;
+      sy = e.changedTouches[0].screenY;
+    }, { passive: true });
+    el.addEventListener('touchend', e => {
+      const dx = e.changedTouches[0].screenX - sx;
+      const dy = e.changedTouches[0].screenY - sy;
+      if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy))
+        dayNav(section, dx > 0 ? +1 : -1);
   }, { passive: true });
+  });
 })();
 
 // ── SERVICE WORKER ────────────────────────────────────────────────────────────

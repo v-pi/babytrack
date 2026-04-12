@@ -1,6 +1,6 @@
 /* ── RESET & VARS ── */
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-html{height:100%}
+html{}
 
 :root{
   --pink:#e8649a;--pink-light:#fdf0f6;--pink-mid:#f7d6e8;
@@ -29,9 +29,9 @@ html{height:100%}
 body{
   font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
   background:var(--bg);color:var(--text);
-  height:100dvh;height:100vh;height:100dvh;
-  display:flex;flex-direction:column;
-  overflow:hidden;
+  min-height:100dvh;
+  overflow-x:hidden;
+  touch-action:pan-y;
   -webkit-tap-highlight-color:transparent;
 }
 
@@ -40,7 +40,7 @@ body{
   background:var(--card);padding:12px 16px 10px;
   border-bottom:1px solid var(--border);
   display:flex;align-items:center;justify-content:space-between;
-  flex-shrink:0;
+  position:sticky;top:0;z-index:10;
   padding-top:calc(12px + var(--sat));
 }
 .header-left{display:flex;align-items:center;gap:10px}
@@ -64,20 +64,20 @@ body{
 .sync-dot.error{background:#e05;animation:none}
 
 .header-right{display:flex;align-items:center;gap:10px}
-.hdate{display:none}
+.hdate{font-size:12px;color:var(--text-muted)}
 
 /* ── CONTENT ── */
 .content{
-  flex:1;overflow-y:auto;overflow-x:hidden;
-  -webkit-overflow-scrolling:touch;
   padding:16px;
   padding-bottom:calc(16px + var(--tab-h) + var(--sab));
+  min-height:calc(100dvh - 56px);
 }
 
 /* ── TABS ── */
 .tabs{
   display:flex;background:var(--card);border-top:1px solid var(--border);
-  flex-shrink:0;padding-bottom:var(--sab);min-height:var(--tab-h);
+  position:fixed;bottom:0;left:0;right:0;z-index:10;
+  padding-bottom:var(--sab);min-height:var(--tab-h);
 }
 .tab{
   flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;
@@ -102,6 +102,7 @@ body{
   border:none;border-radius:var(--radius);padding:16px 10px;cursor:pointer;
   display:flex;flex-direction:column;align-items:center;gap:5px;
   position:relative;width:100%;transition:transform .1s;
+  touch-action:pan-y;
 }
 .breast-btn:active{transform:scale(.97)}
 .breast-btn.left{background:var(--pink-light)}
@@ -130,6 +131,7 @@ body{
   width:100%;border:none;border-radius:var(--radius);padding:18px;cursor:pointer;
   display:flex;align-items:center;justify-content:space-between;gap:12px;
   background:var(--green-light);transition:transform .1s;
+  touch-action:pan-y;
 }
 .sleep-btn:active{transform:scale(.99)}
 .sleep-btn.sleeping{background:#d4f0e3}
@@ -144,6 +146,7 @@ body{
 .diaper-btn{
   border:none;border-radius:var(--radius);padding:16px 10px;cursor:pointer;
   display:flex;flex-direction:column;align-items:center;gap:5px;transition:transform .1s;
+  touch-action:pan-y;
 }
 .diaper-btn:active{transform:scale(.96)}
 .diaper-btn.wet{background:var(--blue-light)}
@@ -157,6 +160,30 @@ body{
 .diaper-btn.dirty .d-count{color:var(--amber)}
 .d-sub{font-size:11px;color:var(--text-muted)}
 
+
+/* ── COUCHES : toggle + mixte + valider ── */
+.diaper-btn{transition:transform .1s, box-shadow .15s, opacity .15s}
+.diaper-btn.wet.pressed{
+  background:#c8dffa;
+  box-shadow:0 0 0 2.5px var(--blue);
+}
+.diaper-btn.dirty.pressed{
+  background:#fce4b4;
+  box-shadow:0 0 0 2.5px var(--amber);
+}
+.h-dot.mixed{
+  background: linear-gradient(135deg, var(--blue) 50%, var(--amber) 50%);
+}
+.diaper-validate{
+  display:none;width:100%;margin-top:14px;
+  border:none;border-radius:var(--radius);
+  padding:15px;
+  background:var(--green);color:#fff;
+  font-size:15px;font-weight:700;cursor:pointer;
+  transition:opacity .15s, transform .1s;
+}
+.diaper-validate.visible{display:block}
+.diaper-validate:active{opacity:.85;transform:scale(.98)}
 /* ── SUMMARY ── */
 .summary-row{display:flex;gap:10px;margin-bottom:14px}
 .summary-chip{flex:1;background:var(--card);border-radius:var(--radius-sm);padding:10px 12px;box-shadow:var(--shadow);text-align:center}
@@ -176,6 +203,7 @@ body{
   display:flex;align-items:center;gap:10px;padding:10px 14px;
   background:var(--card);border-radius:var(--radius-sm);box-shadow:var(--shadow);
   cursor:pointer;transition:background .1s;
+  touch-action:pan-y;
 }
 .history-item:active{background:#f7f7f7}
 .history-item.pending{border-left:3px solid var(--amber)}
@@ -199,15 +227,14 @@ body{
   font-weight:500;display:flex;align-items:center;justify-content:center;gap:6px;margin-bottom:14px;
 }
 .export-btn:active{background:var(--bg)}
-.tl-nav{
-  display:flex;align-items:center;justify-content:space-between;
-  background:var(--card);border-radius:var(--radius);padding:12px 16px;margin-bottom:12px;box-shadow:var(--shadow);
+.day-nav{
+  display:flex;align-items:center;
+  background:var(--card);border-radius:var(--radius);padding:10px 16px;margin-bottom:12px;box-shadow:var(--shadow);
 }
-.tl-nav-btn{border:none;background:none;cursor:pointer;font-size:22px;color:var(--pink);padding:4px 8px;border-radius:8px;line-height:1;transition:opacity .15s}
-.tl-nav-btn:active{opacity:.5}
-.tl-nav-btn:disabled{color:var(--border);cursor:default}
-.tl-nav-label{font-size:15px;font-weight:700;color:var(--text);flex:1;text-align:center}
-.tl-swipe-hint{font-size:11px;color:var(--text-muted);text-align:center;margin-bottom:10px;opacity:.7}
+.day-nav-btn{border:none;background:none;cursor:pointer;font-size:22px;color:var(--pink);padding:4px 10px;border-radius:8px;line-height:1;transition:opacity .15s;flex-shrink:0}
+.day-nav-btn:active{opacity:.5}
+.day-nav-btn:disabled{color:var(--border);cursor:default}
+.day-nav-label{font-size:14px;font-weight:700;color:var(--text);flex:1;text-align:center}
 .timeline-day{background:var(--card);border-radius:var(--radius);margin-bottom:12px;box-shadow:var(--shadow)}
 .tl-body{padding:4px 14px 14px;display:flex;flex-direction:column;gap:8px}
 .tl-ticks-row{display:flex;align-items:center;gap:8px}
@@ -333,9 +360,9 @@ body{
 
 /* ── MODE PWA (Installée sur l'écran d'accueil) ── */
 @media (display-mode: standalone), (display-mode: fullscreen) {
-  html { overscroll-behavior: none; }
+  /* En mode PWA installée, on bloque le PTR natif (rechargerait sans syncer).
+     Le bouton sync-dot ou le retour en ligne déclenchent la synchro. */
   body { overscroll-behavior-y: none; }
-  .content { overscroll-behavior-y: contain; }
 }
 [data-theme="dark"] .modal-field input[type=time],
 [data-theme="dark"] .modal-field input[type=date],
