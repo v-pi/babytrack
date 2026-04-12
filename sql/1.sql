@@ -1,52 +1,69 @@
--- Active l'extension pour générer des UUIDs sécurisés
+-- ==============================================================================
+-- BABYTRACK - FULL DATABASE SCHEMA & SECURITY
+-- ==============================================================================
+
+-- 1. EXTENSIONS
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
--- Table des familles
-CREATE TABLE families (
+-- 2. TABLES (incluant toutes les migrations : baby_name, baby_emoji, volume)
+CREATE TABLE IF NOT EXISTS public.families (
   id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
-  created_at timestamptz DEFAULT now()
+  created_at timestamptz DEFAULT now(),
+  baby_name text,
+  baby_emoji text
 );
 
--- Table des logs
-CREATE TABLE logs (
+CREATE TABLE IF NOT EXISTS public.logs (
   id uuid PRIMARY KEY,
-  family_id uuid REFERENCES families(id) ON DELETE CASCADE,
+  family_id uuid REFERENCES public.families(id) ON DELETE CASCADE,
   type text NOT NULL,
   side text,
   "start" bigint,
   "end" bigint,
   duration bigint,
   "timestamp" bigint,
-  "diaperType" text
+  "diaperType" text,
+  volume integer
 );
 
--- Table des timers actifs
-CREATE TABLE active_timers (
-  family_id uuid REFERENCES families(id) ON DELETE CASCADE,
+CREATE TABLE IF NOT EXISTS public.active_timers (
+  family_id uuid REFERENCES public.families(id) ON DELETE CASCADE,
   type text NOT NULL,
   side text,
   start_time bigint NOT NULL,
   PRIMARY KEY (family_id, type, side)
 );
 
--- ACTIVER LA SÉCURITÉ (RLS)
-ALTER TABLE families ENABLE ROW LEVEL SECURITY;
-ALTER TABLE logs ENABLE ROW LEVEL SECURITY;
-ALTER TABLE active_timers ENABLE ROW LEVEL SECURITY;
+-- 3. INDEX DE PERFORMANCE
+-- Indispensable pour éviter un "full table scan" lors de la synchro d'une famille
+CREATE INDEX IF NOT EXISTS idx_logs_family_id ON public.logs (family_id);
 
--- POLITIQUES DE SÉCURITÉ
--- 1. Autoriser la création d'une famille au premier lancement
-CREATE POLICY "Famille creation" ON families FOR INSERT WITH CHECK (true);
+-- 4. SÉCURITÉ (RLS - ROW LEVEL SECURITY)
+-- Activation de la sécurité sur toutes les tables
+ALTER TABLE public.families ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.logs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.active_timers ENABLE ROW LEVEL SECURITY;
 
--- 2. On isole tout le reste grâce au header x-family-id passé par le code Javascript
-CREATE POLICY "Logs policy" ON logs FOR ALL USING (
-  family_id::text = current_setting('request.headers', true)::json->>'x-family-id'
-) WITH CHECK (
-  family_id::text = current_setting('request.headers', true)::json->>'x-family-id'
-);
+-- 5. POLITIQUES STRICTES (Basées sur le header x-family-id)
+-- Autorise toutes les opérations (SELECT, INSERT, UPDATE, DELETE) 
+-- UNIQUEMENT SI le code JS envoie le bon header HTTP
+CREATE POLICY "Families strict policy" ON public.families
+  FOR ALL USING (
+    id::text = current_setting('request.headers', true)::json->>'x-family-id'
+  ) WITH CHECK (
+    id::text = current_setting('request.headers', true)::json->>'x-family-id'
+  );
 
-CREATE POLICY "Timers policy" ON active_timers FOR ALL USING (
-  family_id::text = current_setting('request.headers', true)::json->>'x-family-id'
-) WITH CHECK (
-  family_id::text = current_setting('request.headers', true)::json->>'x-family-id'
-);
+CREATE POLICY "Logs policy" ON public.logs 
+  FOR ALL USING (
+    family_id::text = current_setting('request.headers', true)::json->>'x-family-id'
+  ) WITH CHECK (
+    family_id::text = current_setting('request.headers', true)::json->>'x-family-id'
+  );
+
+CREATE POLICY "Timers policy" ON public.active_timers 
+  FOR ALL USING (
+    family_id::text = current_setting('request.headers', true)::json->>'x-family-id'
+  ) WITH CHECK (
+    family_id::text = current_setting('request.headers', true)::json->>'x-family-id'
+  );
