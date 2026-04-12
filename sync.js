@@ -18,8 +18,11 @@ let supabaseClient = null;
 let _realtimeChannels = [];
 
 function initSupabase() {
-  if (!SUPABASE_URL || SUPABASE_URL === 'VOTRE_SUPABASE_URL') return;
-  supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+  supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
+    global: {
+      headers: { 'x-family-id': familyId || '' }
+    }
+  });
   syncWithRemote();
   setupRealtime();
 }
@@ -208,8 +211,11 @@ async function createFamily() {
     showToast('Configuration Supabase manquante'); return;
   }
   const newFamilyId = crypto.randomUUID();
-  const tmp = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
   const p = getActiveProfile();
+
+  const tmp = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
+    global: { headers: { 'x-family-id': newFamilyId } }
+  });
 
   await tmp.from('families').insert({
     id: newFamilyId, baby_name: p.name, baby_emoji: p.emoji
