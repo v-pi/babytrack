@@ -154,32 +154,27 @@ function setupRealtime() {
   _realtimeChannels.forEach(ch => supabaseClient.removeChannel(ch));
   _realtimeChannels = [];
 
-  // Active timers channel
-	const timerCh = supabaseClient.channel('rt-timers-' + familyId)
-	  .on('postgres_changes', {
-		event: '*', schema: 'public', table: 'active_timers',
-		filter: `family_id=eq.${familyId}`
-	  }, payload => {
-		const { eventType, new: n, old: o } = payload;
-		if (eventType === 'INSERT' || eventType === 'UPDATE') {
-		  if (!n) return;
-		  if (n.type === 'feed') activateBreastTimerLocal(n.side, toMs(n.start_time));
-		  else                   activateSleepTimerLocal(toMs(n.start_time));
-		} else if (eventType === 'DELETE') {
-		  if (!o) return;
-		  // Ici, si le side est 'none', c'est le sommeil
-		  if (o.side === 'none' || o.type === 'sleep') stopSleepTimerLocal();
-		  else stopBreastTimerLocal(o.side);
-		}
-	  }).subscribe();
-
-  // Logs channel
-  const logCh = supabaseClient.channel('rt-logs-' + familyId)
+  const ch = supabaseClient.channel('rt-' + familyId)
+    // ── Active timers ──────────────────────────────────────────────────────
+    .on('postgres_changes', {
+      event: '*', schema: 'public', table: 'active_timers',
+      filter: `family_id=eq.${familyId}`
+    }, ({ eventType, new: n, old: o }) => {
+      if (eventType === 'INSERT' || eventType === 'UPDATE') {
+        if (!n) return;
+        if (n.type === 'feed') activateBreastTimerLocal(n.side, toMs(n.start_time));
+        else                   activateSleepTimerLocal(toMs(n.start_time));
+      } else if (eventType === 'DELETE') {
+        if (!o) return;
+        if (o.side === 'none' || o.type === 'sleep') stopSleepTimerLocal();
+        else stopBreastTimerLocal(o.side);
+      }
+    })
+    // ── Logs ──────────────────────────────────────────────────────────────
     .on('postgres_changes', {
       event: '*', schema: 'public', table: 'logs',
       filter: `family_id=eq.${familyId}`
-    }, payload => {
-      const { eventType, new: n, old: o } = payload;
+    }, ({ eventType, new: n, old: o }) => {
       if (eventType === 'INSERT') {
         if (!allLogs.find(l => l.id === n.id)) { allLogs.push(n); dbPut(n); renderCurrentTab(); }
       } else if (eventType === 'DELETE') {
@@ -189,24 +184,22 @@ function setupRealtime() {
         if (idx >= 0) allLogs[idx] = n; else allLogs.push(n);
         dbPut(n); renderCurrentTab();
       }
-    }).subscribe();
-
-  // Families channel (baby name + emoji changes from other device)
-  const famCh = supabaseClient.channel('rt-families-' + familyId)
+    })
+    // ── Families (nom / emoji bébé depuis l'autre appareil) ───────────────
     .on('postgres_changes', {
       event: 'UPDATE', schema: 'public', table: 'families',
       filter: `id=eq.${familyId}`
-    }, payload => {
-      const { new: n } = payload;
+    }, ({ new: n }) => {
       if (!n) return;
       const p = getActiveProfile();
       let changed = false;
       if (n.baby_name  && n.baby_name  !== p.name)  { p.name  = n.baby_name;  changed = true; }
       if (n.baby_emoji && n.baby_emoji !== p.emoji) { p.emoji = n.baby_emoji; changed = true; }
       if (changed) { saveProfiles(); updateHeaderProfile(); showToast(`Profil mis à jour : ${p.name}`); }
-    }).subscribe();
+    })
+    .subscribe();
 
-  _realtimeChannels = [timerCh, logCh, famCh];
+  _realtimeChannels = [ch];
 }
 
 // ── FAMILY CREATION / JOIN ───────────────────────────────────────────────────
