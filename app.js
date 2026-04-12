@@ -235,8 +235,11 @@ function switchTab(name, silent) {
   currentTab = name;
   sessionStorage.setItem('bt_tab', name);
   window.scrollTo(0, 0);
+  // Stop the "last feed" tick when leaving the feed tab
+  if (name !== 'feed') stopTick(TICK_LAST_FEED);
+  if (!silent && name === 'feed')     renderFeed();
   if (!silent && name === 'timeline') renderTimeline();
-  if (!silent && name === 'stats') renderStats();
+  if (!silent && name === 'stats')    renderStats();
 }
 
 // ── TOAST ─────────────────────────────────────────────────────────────────────
@@ -256,8 +259,12 @@ function exportCSV() {
     const ts = l.timestamp || l.start;
     rows.push([
       new Date(ts).toLocaleDateString('fr-FR'), fmtTime(ts),
-      l.type==='feed'?'allaitement':l.type==='sleep'?'sommeil':'couche',
-      l.type==='feed'?(l.side==='left'?'gauche':'droit'):l.type==='diaper'?(l.diaperType==='wet'?'pipi':l.diaperType==='dirty'?'selle':'mixte'):'',
+      l.type==='feed'   ? 'allaitement' :
+      l.type==='sleep'  ? 'sommeil'     :
+      l.type==='bottle' ? 'biberon'     : 'couche',
+      l.type==='feed'   ? (l.side==='left' ? 'gauche' : 'droit') :
+      l.type==='diaper' ? (l.diaperType==='wet' ? 'pipi' : l.diaperType==='dirty' ? 'selle' : 'mixte') :
+      l.type==='bottle' ? (l.volume || 0) + ' ml' : '',
       l.duration ? fmtDur(l.duration) : ''
     ]);
   });
@@ -465,7 +472,7 @@ document.addEventListener('visibilitychange', () => {
   if (!document.hidden) {
     ['left','right'].forEach(s => { if (breastActive[s]) activateBreastTimerLocal(s, breastActive[s].start); });
     if (sleepActive) activateSleepTimerLocal(sleepActive.start);
-    startLastFeedTick();
+    if (currentTab === 'feed') startLastFeedTick();
     
     // Une seule commande suffit, elle gère maintenant les retry, delete et pull.
     if (supabaseClient && navigator.onLine) syncWithRemote();
