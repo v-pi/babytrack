@@ -68,6 +68,19 @@ function groupByDay(logs) {
     .map(key => ({ label: fmtDayLabel(new Date(key)), logs: byDay[key].slice().reverse() }));
 }
 
+/**
+ * Escape a string for safe insertion into HTML (prevents XSS).
+ * Use whenever user-supplied data is concatenated into innerHTML.
+ */
+function escapeHtml(str) {
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
 /** Combine a "YYYY-MM-DD" date string and a "HH:MM" time string into a timestamp (ms). */
 function combineDateTime(dateStr, timeStr) {
   const [y, m, d] = dateStr.split('-').map(Number);

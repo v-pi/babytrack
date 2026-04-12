@@ -202,7 +202,7 @@ function buildBarSVG(data, { yMax, yUnit, N, hasMixed }) {
     if (val === 0) lbl = '0';
     else if (isFloat(val)) lbl = val.toFixed(1) + (i === ticks && yUnit ? yUnit : '');
     else lbl = Math.round(val) + (i === ticks && yUnit ? yUnit : '');
-    svg += `<text x="${padL - 3}" y="${y + 3}" text-anchor="end" font-size="8" fill="var(--text-muted)" font-family="-apple-system,sans-serif">${lbl}</text>`;
+    svg += `<text x="${padL - 3}" y="${y + 3}" text-anchor="end" font-size="7" fill="var(--text-muted)" font-family="-apple-system,sans-serif">${lbl}</text>`;
   }
 
   // Bars
@@ -221,7 +221,7 @@ function buildBarSVG(data, { yMax, yUnit, N, hasMixed }) {
       const d = new Date(today);
       d.setDate(today.getDate() - (N - 1 - i));
       const lbl = String(d.getDate()).padStart(2, '0') + '/' + String(d.getMonth() + 1).padStart(2, '0');
-      svg += `<text x="${(x + barW / 2).toFixed(1)}" y="${H - 3}" text-anchor="middle" font-size="8" fill="var(--text-muted)" font-family="-apple-system,sans-serif">${lbl}</text>`;
+      svg += `<text x="${(x + barW / 2).toFixed(1)}" y="${H - 3}" text-anchor="middle" font-size="7" fill="var(--text-muted)" font-family="-apple-system,sans-serif">${lbl}</text>`;
     }
   });
 
@@ -346,7 +346,7 @@ function buildFeedHeatmapSVG(logs, N) {
   [0, 6, 12, 18, 24].forEach(h => {
     const x = +(padL + (h / 24) * plotW).toFixed(1);
     svg += `<line x1="${x}" y1="${padT}" x2="${x}" y2="${padT + trackH}" stroke="${PURPLE}" stroke-opacity="0.15" stroke-width="1" stroke-dasharray="2,2"/>`;
-    svg += `<text x="${x}" y="${H - 4}" text-anchor="middle" font-size="8" fill="var(--text-muted)" font-family="-apple-system,sans-serif">${String(h).padStart(2,'0')}h</text>`;
+    svg += `<text x="${x}" y="${H - 4}" text-anchor="middle" font-size="7" fill="var(--text-muted)" font-family="-apple-system,sans-serif">${String(h).padStart(2,'0')}h</text>`;
   });
 
   // ── Barres superposées ────────────────────────────────────────────────────
@@ -371,17 +371,19 @@ function buildFeedHeatmapSVG(logs, N) {
 
 // ── PROFILE LIST & EMOJI GRID ─────────────────────────────────────────────────
 function renderProfileList() {
-  document.getElementById('profile-list').innerHTML = profiles.map(p =>
-    '<div class="profile-item ' + (p.id===activeProfileId?'active-profile':'') + '" onclick="switchToProfile(\'' + p.id + '\')">' +
-    '<div class="profile-item-emoji">' + p.emoji + '</div>' +
-    '<div class="profile-item-info">' +
-    '<div class="profile-item-name">' + p.name + '</div>' +
-    '<div class="profile-item-sub">' + (p.familyId?'Synchronisé':'Local uniquement') + '</div>' +
-    '</div>' +
-    (p.id===activeProfileId?'<div class="profile-item-badge">Actif</div>':'') +
-    '<button class="profile-item-edit" onclick="event.stopPropagation();openEditProfile(\'' + p.id + '\')">✎</button>' +
-    '</div>'
-  ).join('');
+  document.getElementById('profile-list').innerHTML = profiles.map(p => {
+    const safeName  = escapeHtml(p.name);
+    const safeEmoji = escapeHtml(p.emoji);
+    return '<div class="profile-item ' + (p.id===activeProfileId?'active-profile':'') + '" onclick="switchToProfile(\'' + p.id + '\')">' +
+      '<div class="profile-item-emoji">' + safeEmoji + '</div>' +
+      '<div class="profile-item-info">' +
+      '<div class="profile-item-name">' + safeName + '</div>' +
+      '<div class="profile-item-sub">' + (p.familyId?'Synchronisé':'Local uniquement') + '</div>' +
+      '</div>' +
+      (p.id===activeProfileId?'<div class="profile-item-badge">Actif</div>':'') +
+      '<button class="profile-item-edit" onclick="event.stopPropagation();openEditProfile(\'' + p.id + '\')">✎</button>' +
+      '</div>';
+  }).join('');
 }
 
 function renderEmojiGrid(selected) {
