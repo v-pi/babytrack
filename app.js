@@ -192,7 +192,7 @@ function dayNav(section, delta) {
  * @param {boolean} [silent] - skip timeline render (used at init)
  */
 function switchTab(name, silent) {
-  ['feed','sleep','diaper','timeline'].forEach(t => {
+  ['feed','sleep','diaper','timeline','stats'].forEach(t => {
     document.getElementById('section-'+t).classList.toggle('active', t === name);
     document.getElementById('tab-'+t).classList.toggle('active', t === name);
   });
@@ -201,6 +201,7 @@ function switchTab(name, silent) {
   // Always scroll to top so pull-to-refresh works on every tab
   window.scrollTo(0, 0);
   if (!silent && name === 'timeline') renderTimeline();
+  if (!silent && name === 'stats') renderStats();
 }
 
 // ── TOAST ─────────────────────────────────────────────────────────────────────

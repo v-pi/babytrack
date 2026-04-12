@@ -354,6 +354,18 @@ body{
 }
 .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
 
+/* ── STATS ── */
+.stats-card{margin-bottom:14px}
+.stats-card-header{
+  display:flex;align-items:flex-start;justify-content:space-between;
+  gap:8px 12px;margin-bottom:12px;flex-wrap:wrap;
+}
+.stats-card .card-title{white-space:nowrap;flex-shrink:0}
+.stats-legend{display:flex;gap:6px 10px;flex-wrap:wrap;justify-content:flex-end}
+.stats-leg-item{display:flex;align-items:center;gap:4px;font-size:11px;color:var(--text-muted)}
+.stats-leg-dot{width:8px;height:8px;border-radius:50%;display:inline-block;flex-shrink:0}
+.stats-chart{margin:0 -2px}
+
 /* ── ANIMATIONS ── */
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.55}}
 .running .b-timer,.sleeping .sleep-timer{animation:pulse 2s infinite}

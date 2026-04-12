@@ -161,6 +161,157 @@ function renderAll() {
   renderSleep();
   renderDiapers();
   if (currentTab === 'timeline') renderTimeline();
+  if (currentTab === 'stats') renderStats();
+}
+
+// ── STATS ─────────────────────────────────────────────────────────────────────
+function niceMax(val, isFloat) {
+  if (!val || val <= 0) return isFloat ? 2 : 10;
+  if (isFloat) {
+    const steps = [0.5,1,2,4,6,8,10,12,16,20,24];
+    return steps.find(v => v >= val * 1.15) || Math.ceil(val * 1.2);
+  }
+  const steps = [2,5,8,10,12,15,20,25,30,40,50,60,80,100,120,150,200];
+  return steps.find(v => v >= val * 1.15) || Math.ceil(val * 1.2);
+}
+
+function buildBarSVG(data, { yMax, yUnit, N, hasMixed }) {
+  const W = 340, H = 130;
+  const padL = 30, padR = 4, padT = 8, padB = 22;
+  const plotW = W - padL - padR;
+  const plotH = H - padT - padB;
+  const gap = 1.5;
+  const barW = (plotW - gap * (N - 1)) / N;
+  const ticks = 4;
+  const tickStep = yMax / ticks;
+
+  let defs = hasMixed
+    ? `<defs><linearGradient id="mix-grad" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="50%" stop-color="var(--blue)"/><stop offset="50%" stop-color="var(--amber)"/>
+       </linearGradient></defs>`
+    : '';
+
+  let svg = `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" style="width:100%;display:block">${defs}`;
+
+  // Grid lines + Y labels
+  for (let i = 0; i <= ticks; i++) {
+    const val = tickStep * i;
+    const y = +(padT + plotH - (val / yMax) * plotH).toFixed(1);
+    svg += `<line x1="${padL}" y1="${y}" x2="${W - padR}" y2="${y}" stroke="var(--border)" stroke-width="0.6"/>`;
+    let lbl;
+    if (val === 0) lbl = '0';
+    else if (isFloat(val)) lbl = val.toFixed(1) + (i === ticks && yUnit ? yUnit : '');
+    else lbl = Math.round(val) + (i === ticks && yUnit ? yUnit : '');
+    svg += `<text x="${padL - 3}" y="${y + 3}" text-anchor="end" font-size="8" fill="var(--text-muted)" font-family="-apple-system,sans-serif">${lbl}</text>`;
+  }
+
+  // Bars
+  const today = new Date();
+  data.forEach((item, i) => {
+    const x = +(padL + i * (barW + gap)).toFixed(2);
+    let yBase = padT + plotH;
+    item.segments.forEach(seg => {
+      if (seg.val <= 0) return;
+      const h = Math.max((seg.val / yMax) * plotH, 1);
+      yBase -= h;
+      svg += `<rect x="${x}" y="${yBase.toFixed(2)}" width="${Math.max(barW, 1).toFixed(2)}" height="${h.toFixed(2)}" fill="${seg.fill}" rx="1.5"/>`;
+    });
+    // X label: first, last, every 7th
+    if (i === 0 || i === N - 1 || i % 7 === 0) {
+      const d = new Date(today);
+      d.setDate(today.getDate() - (N - 1 - i));
+      const lbl = String(d.getDate()).padStart(2, '0') + '/' + String(d.getMonth() + 1).padStart(2, '0');
+      svg += `<text x="${(x + barW / 2).toFixed(1)}" y="${H - 3}" text-anchor="middle" font-size="8" fill="var(--text-muted)" font-family="-apple-system,sans-serif">${lbl}</text>`;
+    }
+  });
+
+  svg += '</svg>';
+  return svg;
+}
+
+function isFloat(n) { return n % 1 !== 0; }
+
+function buildChartCard(title, legend, svgContent) {
+  const legendHtml = legend.map(l =>
+    `<div class="stats-leg-item"><span class="stats-leg-dot" style="${l.dotStyle}"></span>${l.label}</div>`
+  ).join('');
+  return `<div class="card stats-card">
+    <div class="stats-card-header">
+      <div class="card-title" style="margin-bottom:0">${title}</div>
+      <div class="stats-legend">${legendHtml}</div>
+    </div>
+    <div class="stats-chart">${svgContent}</div>
+  </div>`;
+}
+
+function renderStats() {
+  const el = document.getElementById('stats-container');
+  if (!el) return;
+
+  const N = 30;
+  const today = new Date();
+  const days = [];
+  for (let i = N - 1; i >= 0; i--) {
+    const d = new Date(today);
+    d.setDate(today.getDate() - i);
+    days.push(d.toDateString());
+  }
+
+  // ── Collect per-day data ──────────────────────────────────────────────────
+  const feedLeftMin = [], feedRightMin = [];
+  const sleepH = [];
+  const dWet = [], dDirty = [], dMixed = [];
+
+  days.forEach(dk => {
+    const fl = allLogs.filter(l => l.type === 'feed' && new Date(l.start).toDateString() === dk);
+    feedLeftMin.push(fl.filter(l => l.side === 'left').reduce((a, l) => a + (l.duration || 0), 0) / 60000);
+    feedRightMin.push(fl.filter(l => l.side === 'right').reduce((a, l) => a + (l.duration || 0), 0) / 60000);
+
+    const sl = allLogs.filter(l => l.type === 'sleep' && new Date(l.start).toDateString() === dk);
+    sleepH.push(sl.reduce((a, l) => a + (l.duration || 0), 0) / 3600000);
+
+    const dl = allLogs.filter(l => l.type === 'diaper' && new Date(l.timestamp).toDateString() === dk);
+    dWet.push(dl.filter(l => l.diaperType === 'wet').length);
+    dDirty.push(dl.filter(l => l.diaperType === 'dirty').length);
+    dMixed.push(dl.filter(l => l.diaperType === 'mixed').length);
+  });
+
+  // ── Feed chart ────────────────────────────────────────────────────────────
+  const feedData = days.map((_, i) => ({ segments: [
+    { val: feedLeftMin[i],  fill: 'var(--pink)' },
+    { val: feedRightMin[i], fill: 'var(--blue)' }
+  ]}));
+  const feedMax = niceMax(Math.max(...feedData.map(d => d.segments.reduce((a, s) => a + s.val, 0))));
+
+  // ── Sleep chart ───────────────────────────────────────────────────────────
+  const sleepData = days.map((_, i) => ({ segments: [
+    { val: sleepH[i], fill: 'var(--green)' }
+  ]}));
+  const sleepMax = niceMax(Math.max(...sleepData.map(d => d.segments[0].val)), true);
+
+  // ── Diaper chart ──────────────────────────────────────────────────────────
+  const diaperData = days.map((_, i) => ({ segments: [
+    { val: dWet[i],   fill: 'var(--blue)'  },
+    { val: dDirty[i], fill: 'var(--amber)' },
+    { val: dMixed[i], fill: 'url(#mix-grad)' }
+  ]}));
+  const diaperMax = niceMax(Math.max(...diaperData.map(d => d.segments.reduce((a, s) => a + s.val, 0))));
+
+  el.innerHTML =
+    buildChartCard('🤱 Allaitement — 30 derniers jours', [
+      { dotStyle: 'background:var(--pink)',  label: 'Gauche' },
+      { dotStyle: 'background:var(--blue)',  label: 'Droit'  }
+    ], buildBarSVG(feedData, { yMax: feedMax, yUnit: 'min', N })) +
+
+    buildChartCard('🌙 Sommeil — 30 derniers jours', [
+      { dotStyle: 'background:var(--green)', label: 'Durée totale' }
+    ], buildBarSVG(sleepData, { yMax: sleepMax, yUnit: 'h', N })) +
+
+    buildChartCard('💧 Couches — 30 derniers jours', [
+      { dotStyle: 'background:var(--blue)',  label: 'Pipi'  },
+      { dotStyle: 'background:var(--amber)', label: 'Selle' },
+      { dotStyle: 'background:linear-gradient(135deg,var(--blue) 50%,var(--amber) 50%)', label: 'Mixte' }
+    ], buildBarSVG(diaperData, { yMax: diaperMax, yUnit: '', N, hasMixed: true }));
 }
 
 // ── PROFILE LIST & EMOJI GRID ─────────────────────────────────────────────────
