@@ -182,13 +182,14 @@ function renderBottle() {
     ).join('') : '<div class="empty-state">Aucun biberon ce jour</div>') + '</div>';
 }
 
-function renderAll() {
-  renderFeed();
-  renderBottle();
-  renderSleep();
-  renderDiapers();
-  if (currentTab === 'timeline') renderTimeline();
-  if (currentTab === 'stats') renderStats();
+/** Render only the currently visible tab. Call this after any data mutation. */
+function renderCurrentTab() {
+  if      (currentTab === 'feed')     renderFeed();
+  else if (currentTab === 'bottle')   renderBottle();
+  else if (currentTab === 'sleep')    renderSleep();
+  else if (currentTab === 'diaper')   renderDiapers();
+  else if (currentTab === 'timeline') renderTimeline();
+  else if (currentTab === 'stats')    renderStats();
 }
 
 // ── STATS ─────────────────────────────────────────────────────────────────────

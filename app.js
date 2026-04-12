@@ -59,7 +59,7 @@ window.onload = async () => {
 async function loadProfileData() {
   allLogs = await dbGetAll();
   loadSession();
-  renderAll();
+  renderCurrentTab();
   restoreTimers();
 }
 
@@ -361,7 +361,7 @@ async function resetCurrentProfile() {
   await dbClear();
   allLogs = []; breastActive = {left:null,right:null}; sleepActive = null;
   localStorage.removeItem('bt_session_'+activeProfileId);
-  renderAll();
+  renderCurrentTab();
   document.getElementById('profile-modal').classList.remove('open');
   setSyncDot('');
   showToast('Données effacées');

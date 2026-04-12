@@ -56,7 +56,7 @@ async function syncWithRemote() {
     if (error) throw error;
     if (data) {
       allLogs = data;
-      renderAll();
+      renderCurrentTab();
       await dbClear();
       for (const l of data) await dbPut(l);
     }
@@ -181,13 +181,13 @@ function setupRealtime() {
     }, payload => {
       const { eventType, new: n, old: o } = payload;
       if (eventType === 'INSERT') {
-        if (!allLogs.find(l => l.id === n.id)) { allLogs.push(n); dbPut(n); renderAll(); }
+        if (!allLogs.find(l => l.id === n.id)) { allLogs.push(n); dbPut(n); renderCurrentTab(); }
       } else if (eventType === 'DELETE') {
-        allLogs = allLogs.filter(l => l.id !== o.id); dbDel(o.id); renderAll();
+        allLogs = allLogs.filter(l => l.id !== o.id); dbDel(o.id); renderCurrentTab();
       } else if (eventType === 'UPDATE') {
         const idx = allLogs.findIndex(l => l.id === n.id);
         if (idx >= 0) allLogs[idx] = n; else allLogs.push(n);
-        dbPut(n); renderAll();
+        dbPut(n); renderCurrentTab();
       }
     }).subscribe();
 

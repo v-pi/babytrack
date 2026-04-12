@@ -80,7 +80,7 @@ async function logAction(log) {
   if (familyId) log.family_id  = familyId;
   else          log.profile_id = activeProfileId;
   allLogs.push(log);
-  renderAll();
+  renderCurrentTab();
   await dbPut(log);
 
   pendingSyncIds.add(log.id); saveSyncQueues(); // File d'attente
@@ -96,7 +96,7 @@ async function logAction(log) {
 async function updateLogAction(log) {
   const idx = allLogs.findIndex(l => l.id === log.id);
   if (idx >= 0) allLogs[idx] = log;
-  renderAll();
+  renderCurrentTab();
   await dbPut(log);
 
   pendingSyncIds.add(log.id); saveSyncQueues(); // File d'attente
@@ -111,7 +111,7 @@ async function updateLogAction(log) {
 
 async function deleteLogAction(id) {
   allLogs = allLogs.filter(l => l.id !== id);
-  renderAll();
+  renderCurrentTab();
   await dbDel(id);
 
   pendingDeletes.add(id); 
