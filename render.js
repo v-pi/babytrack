@@ -297,6 +297,10 @@ function renderStats() {
   ]}));
   const diaperMax = niceMax(Math.max(...diaperData.map(d => d.segments.reduce((a, s) => a + s.val, 0))));
 
+  // ── Feed heatmap ──────────────────────────────────────────────────────────
+  const cutoff = Date.now() - N * 86400000;
+  const feedLogs30 = allLogs.filter(l => l.type === 'feed' && (l.start || 0) >= cutoff);
+
   el.innerHTML =
     buildChartCard('🤱 Allaitement — 30 derniers jours', [
       { dotStyle: 'background:var(--pink)',  label: 'Gauche' },
@@ -311,7 +315,58 @@ function renderStats() {
       { dotStyle: 'background:var(--blue)',  label: 'Pipi'  },
       { dotStyle: 'background:var(--amber)', label: 'Selle' },
       { dotStyle: 'background:linear-gradient(135deg,var(--blue) 50%,var(--amber) 50%)', label: 'Mixte' }
-    ], buildBarSVG(diaperData, { yMax: diaperMax, yUnit: '', N, hasMixed: true }));
+    ], buildBarSVG(diaperData, { yMax: diaperMax, yUnit: '', N, hasMixed: true })) +
+
+    buildChartCard('🔮 Rythme typique des tétées', [], buildFeedHeatmapSVG(feedLogs30, N));
+}
+
+// ── FEED HEATMAP ──────────────────────────────────────────────────────────────
+// Chaque tétée des 30 derniers jours est dessinée sur un axe 0h-24h
+// avec une très faible opacité. Les créneaux habituels s'assombrissent
+// naturellement par accumulation (transparence additive).
+// Formule : opacité effective = 1 - (1 - α)^n
+//   α=0.07, n=10 → ~51%  |  n=20 → ~77%  |  n=30 → ~90%
+function buildFeedHeatmapSVG(logs, N) {
+  const W = 340, H = 88;
+  const padL = 8, padR = 8, padT = 10, padB = 22;
+  const plotW = W - padL - padR;
+  const trackH = H - padT - padB;   // 56px de hauteur de piste
+  const DAY_MS = 86400000;
+  const ALPHA   = 0.07;              // opacité par barre
+  const MIN_PX  = 4;                 // largeur minimale visible (feed très court)
+  const PURPLE  = '#8b5cf6';
+
+  // ── Fond de piste + ticks ────────────────────────────────────────────────
+  let svg = `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" style="width:100%;display:block">`;
+
+  // Fond légèrement teinté
+  svg += `<rect x="${padL}" y="${padT}" width="${plotW}" height="${trackH}" fill="${PURPLE}" fill-opacity="0.05" rx="4"/>`;
+
+  // Lignes de quart de journée + labels
+  [0, 6, 12, 18, 24].forEach(h => {
+    const x = +(padL + (h / 24) * plotW).toFixed(1);
+    svg += `<line x1="${x}" y1="${padT}" x2="${x}" y2="${padT + trackH}" stroke="${PURPLE}" stroke-opacity="0.15" stroke-width="1" stroke-dasharray="2,2"/>`;
+    svg += `<text x="${x}" y="${H - 4}" text-anchor="middle" font-size="8" fill="var(--text-muted)" font-family="-apple-system,sans-serif">${String(h).padStart(2,'0')}h</text>`;
+  });
+
+  // ── Barres superposées ────────────────────────────────────────────────────
+  logs.forEach(l => {
+    const d   = new Date(l.start);
+    const sec = d.getHours() * 3600 + d.getMinutes() * 60 + d.getSeconds();
+    const x   = +(padL + (sec / 86400) * plotW).toFixed(2);
+    const w   = Math.max((l.duration || 0) / DAY_MS * plotW, MIN_PX).toFixed(2);
+    svg += `<rect x="${x}" y="${padT}" width="${w}" height="${trackH}" fill="${PURPLE}" fill-opacity="${ALPHA}" rx="2"/>`;
+  });
+
+  svg += '</svg>';
+
+  // Sous-titre (nombre de tétées analysées)
+  const nDays = Math.min(N, new Set(logs.map(l => new Date(l.start).toDateString())).size);
+  const caption = logs.length
+    ? `<div class="stats-heatmap-caption">${logs.length} tétées sur ${nDays} jour${nDays > 1 ? 's' : ''} — plus c'est dense, plus c'est habituel</div>`
+    : `<div class="stats-heatmap-caption empty">Aucune tétée enregistrée sur 30 jours</div>`;
+
+  return svg + caption;
 }
 
 // ── PROFILE LIST & EMOJI GRID ─────────────────────────────────────────────────
