@@ -19,9 +19,10 @@ let editingLog       = null;
 let editingProfileId = null;
 let currentTab       = 'feed';
 let diaperSelection = { wet: false, dirty: false };
+let lastBottleVol   = 0;   // default 0, then last entered value
 let toastTO;
 let tlDayIndex = 0, tlDays = [];
-let histDay = { feed: 0, sleep: 0, diaper: 0 };
+let histDay = { feed: 0, bottle: 0, sleep: 0, diaper: 0 };
 const TICK_LAST_FEED = 'last-feed-global';
 
 // ── SYNC QUEUES (Sauvegarde locale des actions en attente) ───────────────────
@@ -50,6 +51,7 @@ function loadProfiles() {
     activeProfileId = profiles[0].id;
     
   loadSyncQueues(); // <--- NOUVEAU
+  try { lastBottleVol = parseInt(localStorage.getItem('bt_last_bottle_vol') || '0', 10) || 0; } catch { lastBottleVol = 0; }
 }
 
 function saveProfiles() {

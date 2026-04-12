@@ -37,6 +37,9 @@ window.onload = async () => {
   }
 
   await loadProfileData();
+  // Init bottle input from persisted last value
+  const bvi = document.getElementById('bottle-vol-input');
+  if (bvi) { bvi.value = lastBottleVol; updateBottleDisplay(); }
   familyId = getActiveProfile().familyId;
 
   if (!familyId) {
@@ -166,6 +169,39 @@ function validateDiaper() {
   document.getElementById('diaper-validate').classList.remove('visible');
 }
 
+// ── BIBERON ───────────────────────────────────────────────────────────────────
+function adjustBottleVol(delta) {
+  const input = document.getElementById('bottle-vol-input');
+  if (!input) return;
+  const val = Math.max(0, Math.min(999, (parseInt(input.value, 10) || 0) + delta));
+  input.value = val;
+  input.dispatchEvent(new Event('input'));
+}
+
+function setBottlePreset(val) {
+  const input = document.getElementById('bottle-vol-input');
+  if (!input) return;
+  input.value = val;
+  input.dispatchEvent(new Event('input'));
+}
+
+function updateBottleDisplay() {
+  const input = document.getElementById('bottle-vol-input');
+  if (!input) return;
+  const val = parseInt(input.value, 10) || 0;
+  const display = document.getElementById('bottle-vol-display');
+  if (display) display.textContent = val + ' ml';
+}
+
+function logBottle() {
+  const input = document.getElementById('bottle-vol-input');
+  const vol = Math.max(0, parseInt(input ? input.value : 0, 10) || 0);
+  logAction({ type: 'bottle', volume: vol, timestamp: Date.now() });
+  lastBottleVol = vol;
+  localStorage.setItem('bt_last_bottle_vol', vol);
+  showToast('🍼 ' + vol + ' ml enregistré');
+}
+
 // ── DAY NAVIGATION (unified) ─────────────────────────────────────────────────
 function dayNav(section, delta) {
   if (section === 'timeline') {
@@ -175,12 +211,12 @@ function dayNav(section, delta) {
     c.classList.add('swiping');
     setTimeout(() => { tlDayIndex = newIdx; renderTimeline(); c.classList.remove('swiping'); }, 150);
   } else {
-    const logs = allLogs.filter(l => l.type === section);
-    const days = getHistDays(logs);
+    const days = getHistDays(allLogs.filter(l => l.type === section));
     const newIdx = histDay[section] + delta;
     if (newIdx < 0 || newIdx >= days.length) return;
     histDay[section] = newIdx;
     if      (section === 'feed')   renderFeed();
+    else if (section === 'bottle') renderBottle();
     else if (section === 'sleep')  renderSleep();
     else if (section === 'diaper') renderDiapers();
   }
@@ -192,13 +228,12 @@ function dayNav(section, delta) {
  * @param {boolean} [silent] - skip timeline render (used at init)
  */
 function switchTab(name, silent) {
-  ['feed','sleep','diaper','timeline','stats'].forEach(t => {
+  ['feed','bottle','sleep','diaper','timeline','stats'].forEach(t => {
     document.getElementById('section-'+t).classList.toggle('active', t === name);
     document.getElementById('tab-'+t).classList.toggle('active', t === name);
   });
   currentTab = name;
   sessionStorage.setItem('bt_tab', name);
-  // Always scroll to top so pull-to-refresh works on every tab
   window.scrollTo(0, 0);
   if (!silent && name === 'timeline') renderTimeline();
   if (!silent && name === 'stats') renderStats();
@@ -368,6 +403,14 @@ function openEdit(id) {
           ${dlabels[t]}</button>`).join('')}
       </div>
     </div>`;
+  } else if (editingLog.type === 'bottle') {
+    b.innerHTML = `<div class="modal-row">
+      <div class="modal-field"><label>Date</label><input type="date" id="ed-d" value="${fmtYMD(editingLog.timestamp)}"/></div>
+      <div class="modal-field"><label>Heure</label><input type="time" id="ed-t" value="${fmtHM(editingLog.timestamp)}"/></div>
+    </div>
+    <div class="modal-field"><label>Volume (ml)</label>
+      <input type="number" id="ed-vol" min="0" max="999" step="10" value="${editingLog.volume || 0}" style="font-size:22px;font-weight:700;text-align:center"/>
+    </div>`;
   } else {
     b.innerHTML = `<div class="modal-row">
       <div class="modal-field"><label>Début Date</label><input type="date" id="es-d" value="${fmtYMD(editingLog.start)}"/></div>
@@ -399,6 +442,9 @@ function saveEntry() {
   if (!editingLog) return;
   if (editingLog.type === 'diaper') {
     editingLog.timestamp = combineDateTime(document.getElementById('ed-d').value, document.getElementById('ed-t').value);
+  } else if (editingLog.type === 'bottle') {
+    editingLog.timestamp = combineDateTime(document.getElementById('ed-d').value, document.getElementById('ed-t').value);
+    editingLog.volume    = Math.max(0, parseInt(document.getElementById('ed-vol').value, 10) || 0);
   } else {
     editingLog.start     = combineDateTime(document.getElementById('es-d').value, document.getElementById('es-t').value);
     editingLog.end       = combineDateTime(document.getElementById('ee-d').value, document.getElementById('ee-t').value);
@@ -430,7 +476,7 @@ document.addEventListener('visibilitychange', () => {
 
 // ── SWIPE (all sections, unified) ────────────────────────────────────────────
 (function setupDaySwipe() {
-  [['section-feed','feed'],['section-sleep','sleep'],
+  [['section-feed','feed'],['section-bottle','bottle'],['section-sleep','sleep'],
    ['section-diaper','diaper'],['section-timeline','timeline']].forEach(([id, section]) => {
     const el = document.getElementById(id);
     let sx = 0, sy = 0;

@@ -156,8 +156,35 @@ function renderTimeline() {
     '</div></div>';
 }
 
+// ── BOTTLE ────────────────────────────────────────────────────────────────────
+function renderBottle() {
+  const tl = todayLogs().filter(l => l.type === 'bottle');
+  document.getElementById('sum-bottle-count').textContent = tl.length;
+  document.getElementById('sum-bottle-total').textContent = tl.reduce((a, l) => a + (l.volume || 0), 0) + ' ml';
+
+  const el   = document.getElementById('bottle-history');
+  const logs = allLogs.filter(l => l.type === 'bottle');
+  const days = getHistDays(logs);
+  if (!days.length) { el.innerHTML = '<div class="empty-state">Aucun biberon enregistré</div>'; return; }
+  histDay.bottle = Math.max(0, Math.min(histDay.bottle || 0, days.length - 1));
+  const dayLogs = logs
+    .filter(l => new Date(l.timestamp).toDateString() === days[histDay.bottle])
+    .sort((a, b) => b.timestamp - a.timestamp);
+  el.innerHTML = renderDayNav('bottle', histDay.bottle, days) +
+    '<div class="history-list">' +
+    (dayLogs.length ? dayLogs.map(l =>
+      '<div class="history-item' + (pendingSyncIds.has(l.id) ? ' pending' : '') + '" onclick="openEdit(\'' + l.id + '\')">' +
+      '<div class="h-dot bottle"></div>' +
+      '<div class="h-main"><div class="h-label">🍼 ' + (l.volume || 0) + ' ml</div>' +
+      '<div class="h-range">' + fmtTime(l.timestamp) + '</div></div>' +
+      '<div class="h-edit-hint">✎</div>' +
+      '</div>'
+    ).join('') : '<div class="empty-state">Aucun biberon ce jour</div>') + '</div>';
+}
+
 function renderAll() {
   renderFeed();
+  renderBottle();
   renderSleep();
   renderDiapers();
   if (currentTab === 'timeline') renderTimeline();

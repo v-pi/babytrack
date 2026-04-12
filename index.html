@@ -13,7 +13,7 @@
   <script>
     (function(){var t=localStorage.getItem('bt_theme');if(t==='dark')document.documentElement.setAttribute('data-theme','dark');})();
   </script>
-  <link rel="stylesheet" href="main.css?v=30"/>
+  <link rel="stylesheet" href="main.css?v=31"/>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>
@@ -72,6 +72,38 @@
     </div>
     <div class="section-label">Tout l'historique</div>
     <div id="feed-history"></div>
+  </div>
+
+  <!-- BIBERON -->
+  <div class="section" id="section-bottle">
+    <div class="card">
+      <div class="card-title">Biberon</div>
+      <div class="bottle-stepper">
+        <button class="vol-btn" onclick="adjustBottleVol(-10)" aria-label="Moins 10 ml">−</button>
+        <div class="vol-display">
+          <input type="number" id="bottle-vol-input" min="0" max="999" step="10"
+                 oninput="updateBottleDisplay()"
+                 style="opacity:0;position:absolute;pointer-events:none;width:1px"/>
+          <div class="vol-number" id="bottle-vol-display">0 ml</div>
+        </div>
+        <button class="vol-btn" onclick="adjustBottleVol(+10)" aria-label="Plus 10 ml">+</button>
+      </div>
+      <div class="bottle-presets">
+        <button class="preset-btn" onclick="setBottlePreset(60)">60</button>
+        <button class="preset-btn" onclick="setBottlePreset(90)">90</button>
+        <button class="preset-btn" onclick="setBottlePreset(120)">120</button>
+        <button class="preset-btn" onclick="setBottlePreset(150)">150</button>
+        <button class="preset-btn" onclick="setBottlePreset(180)">180</button>
+        <button class="preset-btn" onclick="setBottlePreset(210)">210</button>
+      </div>
+      <button class="bottle-log-btn" onclick="logBottle()">Enregistrer ✓</button>
+    </div>
+    <div class="summary-row">
+      <div class="summary-chip teal"><div class="s-val" id="sum-bottle-count">0</div><div class="s-lab">biberons auj.</div></div>
+      <div class="summary-chip blue"><div class="s-val" id="sum-bottle-total">0 ml</div><div class="s-lab">volume total</div></div>
+    </div>
+    <div class="section-label">Tout l'historique</div>
+    <div id="bottle-history"></div>
   </div>
 
   <!-- SOMMEIL -->
@@ -152,6 +184,10 @@
   <button class="tab active" id="tab-feed" onclick="switchTab('feed')">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2C8 2 5 5 5 9c0 5 7 13 7 13s7-8 7-13c0-4-3-7-7-7z"/><circle cx="12" cy="9" r="2.5"/></svg>
     Allaitement<div class="tab-dot"></div>
+  </button>
+  <button class="tab" id="tab-bottle" onclick="switchTab('bottle')">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 2h6v3H9z"/><path d="M8 5c-2 1-3 3-3 5v9a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-9c0-2-1-4-3-5"/><line x1="12" y1="11" x2="12" y2="16"/><line x1="9.5" y1="13.5" x2="14.5" y2="13.5"/></svg>
+    Biberon<div class="tab-dot"></div>
   </button>
   <button class="tab" id="tab-sleep" onclick="switchTab('sleep')">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
@@ -245,11 +281,11 @@
 <div class="toast" id="toast"></div>
 
 <!-- ── SCRIPTS (all at root level, versioned) ── -->
-<script src="utils.js?v=30"></script>
-<script src="db.js?v=30"></script>
-<script src="state.js?v=30"></script>
-<script src="render.js?v=30"></script>
-<script src="sync.js?v=30"></script>
-<script src="app.js?v=30"></script>
+<script src="utils.js?v=31"></script>
+<script src="db.js?v=31"></script>
+<script src="state.js?v=31"></script>
+<script src="render.js?v=31"></script>
+<script src="sync.js?v=31"></script>
+<script src="app.js?v=31"></script>
 </body>
 </html>
