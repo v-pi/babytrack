@@ -13,7 +13,7 @@
   <script>
     (function(){var t=localStorage.getItem('bt_theme');if(t==='dark')document.documentElement.setAttribute('data-theme','dark');})();
   </script>
-  <link rel="stylesheet" href="main.css?v=37"/>
+  <link rel="stylesheet" href="main.css?v=38"/>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>
@@ -83,8 +83,10 @@
         <div class="vol-display">
           <input type="number" id="bottle-vol-input" min="0" max="999" step="10"
                  oninput="updateBottleDisplay()"
-                 style="opacity:0;position:absolute;pointer-events:none;width:1px"/>
-          <div class="vol-number" id="bottle-vol-display">0 ml</div>
+                 class="vol-input"
+                 inputmode="numeric"
+                 aria-label="Volume en ml"/>
+          <div class="vol-unit">ml</div>
         </div>
         <button class="vol-btn" onclick="adjustBottleVol(+10)" aria-label="Plus 10 ml">+</button>
       </div>
@@ -281,11 +283,11 @@
 <div class="toast" id="toast"></div>
 
 <!-- ── SCRIPTS (all at root level, versioned) ── -->
-<script src="utils.js?v=37"></script>
-<script src="db.js?v=37"></script>
-<script src="state.js?v=37"></script>
-<script src="render.js?v=37"></script>
-<script src="sync.js?v=37"></script>
-<script src="app.js?v=37"></script>
+<script src="utils.js?v=38"></script>
+<script src="db.js?v=38"></script>
+<script src="state.js?v=38"></script>
+<script src="render.js?v=38"></script>
+<script src="sync.js?v=38"></script>
+<script src="app.js?v=38"></script>
 </body>
 </html>

@@ -192,6 +192,20 @@ function renderCurrentTab() {
   else if (currentTab === 'stats')    renderStats();
 }
 
+/**
+ * Full re-render of every tab. Only call this when the active tab is unknown
+ * (e.g. switchTab itself, or a hard reset). All normal mutations should use
+ * renderCurrentTab() instead.
+ */
+function renderAll() {
+  renderFeed();
+  renderBottle();
+  renderSleep();
+  renderDiapers();
+  if (currentTab === 'timeline') renderTimeline();
+  if (currentTab === 'stats')    renderStats();
+}
+
 // ── STATS ─────────────────────────────────────────────────────────────────────
 function niceMax(val, isFloat) {
   if (!val || val <= 0) return isFloat ? 2 : 10;
@@ -285,24 +299,38 @@ function renderStats() {
     days.push(d.toDateString());
   }
 
-  // ── Collect per-day data ──────────────────────────────────────────────────
-  const feedLeftMin = [], feedRightMin = [];
-  const sleepH = [];
-  const dWet = [], dDirty = [], dMixed = [];
-
+  // ── Single-pass aggregation — O(allLogs) instead of O(30 × allLogs) ────────
+  // Pre-build a map: dateString → accumulated stats
+  const cutoffTs = today.getTime() - N * 86400000;
+  const statsMap = {};
   days.forEach(dk => {
-    const fl = allLogs.filter(l => l.type === 'feed' && new Date(l.start).toDateString() === dk);
-    feedLeftMin.push(fl.filter(l => l.side === 'left').reduce((a, l) => a + (l.duration || 0), 0) / 60000);
-    feedRightMin.push(fl.filter(l => l.side === 'right').reduce((a, l) => a + (l.duration || 0), 0) / 60000);
-
-    const sl = allLogs.filter(l => l.type === 'sleep' && new Date(l.start).toDateString() === dk);
-    sleepH.push(sl.reduce((a, l) => a + (l.duration || 0), 0) / 3600000);
-
-    const dl = allLogs.filter(l => l.type === 'diaper' && new Date(l.timestamp).toDateString() === dk);
-    dWet.push(dl.filter(l => l.diaperType === 'wet').length);
-    dDirty.push(dl.filter(l => l.diaperType === 'dirty').length);
-    dMixed.push(dl.filter(l => l.diaperType === 'mixed').length);
+    statsMap[dk] = { feedLeft: 0, feedRight: 0, sleepMs: 0, wet: 0, dirty: 0, mixed: 0 };
   });
+
+  allLogs.forEach(l => {
+    const ts = l.start || l.timestamp;
+    if (!ts || ts < cutoffTs) return;          // skip logs outside the window
+    const dk = new Date(ts).toDateString();
+    const bucket = statsMap[dk];
+    if (!bucket) return;                       // day not in our 30-day window
+    if (l.type === 'feed') {
+      if (l.side === 'left')  bucket.feedLeft  += (l.duration || 0);
+      else                    bucket.feedRight += (l.duration || 0);
+    } else if (l.type === 'sleep') {
+      bucket.sleepMs += (l.duration || 0);
+    } else if (l.type === 'diaper') {
+      if      (l.diaperType === 'wet')   bucket.wet++;
+      else if (l.diaperType === 'dirty') bucket.dirty++;
+      else if (l.diaperType === 'mixed') bucket.mixed++;
+    }
+  });
+
+  const feedLeftMin  = days.map(dk => statsMap[dk].feedLeft  / 60000);
+  const feedRightMin = days.map(dk => statsMap[dk].feedRight / 60000);
+  const sleepH       = days.map(dk => statsMap[dk].sleepMs   / 3600000);
+  const dWet         = days.map(dk => statsMap[dk].wet);
+  const dDirty       = days.map(dk => statsMap[dk].dirty);
+  const dMixed       = days.map(dk => statsMap[dk].mixed);
 
   // ── Feed chart ────────────────────────────────────────────────────────────
   const feedData = days.map((_, i) => ({ segments: [
@@ -326,8 +354,7 @@ function renderStats() {
   const diaperMax = niceMax(Math.max(...diaperData.map(d => d.segments.reduce((a, s) => a + s.val, 0))));
 
   // ── Feed heatmap ──────────────────────────────────────────────────────────
-  const cutoff = Date.now() - N * 86400000;
-  const feedLogs30 = allLogs.filter(l => l.type === 'feed' && (l.start || 0) >= cutoff);
+  const feedLogs30 = allLogs.filter(l => l.type === 'feed' && (l.start || 0) >= cutoffTs);
 
   el.innerHTML =
     buildChartCard('🤱 Allaitement — 30 derniers jours', [

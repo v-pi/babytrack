@@ -7,6 +7,7 @@ html{}
   --blue:#5b8fe8;--blue-light:#eef3fd;
   --green:#4caf82;--green-light:#eaf7f1;
   --amber:#e8a84e;--amber-light:#fdf4e3;
+  --teal:#2a9d8f;--teal-light:#e4f7f3;
   --text:#2c2c2c;--text-muted:#888;
   --bg:#f4f4f6;--card:#fff;--border:#ebebeb;
   --radius:16px;--radius-sm:10px;
@@ -21,6 +22,7 @@ html{}
   --blue:#7aabf0;--blue-light:#1a2236;
   --green:#5fcb97;--green-light:#162a22;
   --amber:#f0c070;--amber-light:#2a2010;
+  --teal:#4ecdc4;--teal-light:#0d2420;
   --text:#f0eef2;--text-muted:#9990a8;
   --bg:#0f0e11;--card:#1c1a20;--border:#2e2b35;
   --shadow:0 1px 8px rgba(0,0,0,.35);
@@ -368,13 +370,23 @@ body{
 }
 .vol-btn:active{background:#d0e4fa;transform:scale(.94)}
 .vol-display{
-  flex:1;text-align:center;cursor:pointer;
-  padding:0 10px;
+  flex:1;display:flex;align-items:center;justify-content:center;gap:6px;
+  padding:0 4px;
 }
-.vol-number{
-  font-size:38px;font-weight:700;color:var(--blue);
+.vol-input{
+  width:90px;border:none;background:transparent;
+  font-size:42px;font-weight:700;color:var(--blue);
   font-variant-numeric:tabular-nums;letter-spacing:-1px;
-  line-height:1.1;
+  text-align:right;padding:0;
+  /* Hide browser spin buttons */
+  -moz-appearance:textfield;
+}
+.vol-input::-webkit-outer-spin-button,
+.vol-input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+.vol-input:focus{outline:none;color:var(--blue)}
+.vol-unit{
+  font-size:18px;font-weight:600;color:var(--blue);opacity:.6;
+  align-self:flex-end;padding-bottom:6px;flex-shrink:0;
 }
 .bottle-presets{
   display:flex;gap:8px;justify-content:center;margin-bottom:16px;flex-wrap:wrap;
@@ -392,11 +404,9 @@ body{
   cursor:pointer;transition:opacity .1s;
 }
 .bottle-log-btn:active{opacity:.85}
-.summary-chip.teal{background:#e4f7f3}
-.summary-chip.teal .s-val{color:#2a9d8f}
-.summary-chip.teal .s-lab{color:#2a9d8f}
-[data-theme="dark"] .summary-chip.teal{background:#0d2420}
-[data-theme="dark"] .summary-chip.teal .s-val,[data-theme="dark"] .summary-chip.teal .s-lab{color:#4ecdc4}
+.summary-chip.teal{background:var(--teal-light)}
+.summary-chip.teal .s-val{color:var(--teal)}
+.summary-chip.teal .s-lab{color:var(--teal)}
 .h-dot.bottle{background:var(--blue)}
 
 /* ── TABS : 6 onglets → icône + texte réduits ── */

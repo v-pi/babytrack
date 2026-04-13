@@ -17,7 +17,22 @@ function toggleTheme() {
 // ── INIT ─────────────────────────────────────────────────────────────────────
 window.onload = async () => {
   applyTheme(localStorage.getItem('bt_theme') === 'dark');
-  await openDB();
+
+  // IndexedDB can be blocked in private browsing (iOS Safari) or if storage
+  // is full. Degrade gracefully: the app still works, data just won't persist.
+  let idbAvailable = true;
+  try {
+    await openDB();
+  } catch (err) {
+    idbAvailable = false;
+    console.warn('IndexedDB unavailable:', err);
+    // Show a non-blocking banner instead of a silent empty state
+    const banner = document.createElement('div');
+    banner.textContent = '⚠️ Stockage local indisponible (navigation privée ?). Les données ne seront pas sauvegardées.';
+    banner.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:999;background:#e05;color:#fff;font-size:12px;font-weight:600;text-align:center;padding:8px 12px;';
+    document.body.prepend(banner);
+  }
+
   loadProfiles();
   updateHeaderProfile();
 
@@ -39,7 +54,7 @@ window.onload = async () => {
   await loadProfileData();
   // Init bottle input from persisted last value
   const bvi = document.getElementById('bottle-vol-input');
-  if (bvi) { bvi.value = lastBottleVol; updateBottleDisplay(); }
+  if (bvi) bvi.value = lastBottleVol;
   familyId = getActiveProfile().familyId;
 
   if (!familyId) {
@@ -57,7 +72,7 @@ window.onload = async () => {
 };
 
 async function loadProfileData() {
-  allLogs = await dbGetAll();
+  allLogs = db ? await dbGetAll() : [];
   loadSession();
   renderCurrentTab();
   restoreTimers();
@@ -173,25 +188,16 @@ function validateDiaper() {
 function adjustBottleVol(delta) {
   const input = document.getElementById('bottle-vol-input');
   if (!input) return;
-  const val = Math.max(0, Math.min(999, (parseInt(input.value, 10) || 0) + delta));
-  input.value = val;
-  input.dispatchEvent(new Event('input'));
+  input.value = Math.max(0, Math.min(999, (parseInt(input.value, 10) || 0) + delta));
 }
 
 function setBottlePreset(val) {
   const input = document.getElementById('bottle-vol-input');
   if (!input) return;
   input.value = val;
-  input.dispatchEvent(new Event('input'));
 }
 
-function updateBottleDisplay() {
-  const input = document.getElementById('bottle-vol-input');
-  if (!input) return;
-  const val = parseInt(input.value, 10) || 0;
-  const display = document.getElementById('bottle-vol-display');
-  if (display) display.textContent = val + ' ml';
-}
+function updateBottleDisplay() { /* kept for compatibility — input is now the display */ }
 
 function logBottle() {
   const input = document.getElementById('bottle-vol-input');
@@ -453,10 +459,13 @@ function saveEntry() {
     editingLog.timestamp = combineDateTime(document.getElementById('ed-d').value, document.getElementById('ed-t').value);
     editingLog.volume    = Math.max(0, parseInt(document.getElementById('ed-vol').value, 10) || 0);
   } else {
-    editingLog.start     = combineDateTime(document.getElementById('es-d').value, document.getElementById('es-t').value);
-    editingLog.end       = combineDateTime(document.getElementById('ee-d').value, document.getElementById('ee-t').value);
-    editingLog.duration  = editingLog.end - editingLog.start;
-    editingLog.timestamp = editingLog.end;
+    const start = combineDateTime(document.getElementById('es-d').value, document.getElementById('es-t').value);
+    const end   = combineDateTime(document.getElementById('ee-d').value, document.getElementById('ee-t').value);
+    if (end <= start) { showToast('⚠️ La fin doit être après le début'); return; }
+    editingLog.start     = start;
+    editingLog.end       = end;
+    editingLog.duration  = end - start;
+    editingLog.timestamp = end;
   }
   updateLogAction(editingLog);
   closeEditModal(); showToast('Modifié !');
