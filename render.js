@@ -348,8 +348,6 @@ function renderStats() {
   const dWet         = days.map(dk => statsMap[dk].wet);
   const dDirty       = days.map(dk => statsMap[dk].dirty);
   const dMixed       = days.map(dk => statsMap[dk].mixed);
-
-  const dMixed       = days.map(dk => statsMap[dk].mixed);
   const bottleVolMl  = days.map(dk => statsMap[dk].bottleVol);
 
   // ── Feed chart ────────────────────────────────────────────────────────────
