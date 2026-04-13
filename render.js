@@ -207,20 +207,6 @@ function renderCurrentTab() {
   else if (currentTab === 'stats')    renderStats();
 }
 
-/**
- * Full re-render of every tab. Only call this when the active tab is unknown
- * (e.g. switchTab itself, or a hard reset). All normal mutations should use
- * renderCurrentTab() instead.
- */
-function renderAll() {
-  renderFeed();
-  renderBottle();
-  renderSleep();
-  renderDiapers();
-  if (currentTab === 'timeline') renderTimeline();
-  if (currentTab === 'stats')    renderStats();
-}
-
 // ── STATS ─────────────────────────────────────────────────────────────────────
 function niceMax(val, isFloat) {
   if (!val || val <= 0) return isFloat ? 2 : 10;

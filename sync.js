@@ -7,7 +7,7 @@
 //   breastActive, sleepActive,
 //   activateBreastTimerLocal, stopBreastTimerLocal,
 //   activateSleepTimerLocal, stopSleepTimerLocal,
-//   renderAll, setSyncDot, showToast, getActiveProfile, updateHeaderProfile,
+//   renderCurrentTab, setSyncDot, showToast, getActiveProfile, updateHeaderProfile,
 //   saveProfiles, profiles
 // ─────────────────────────────────────────────────────────────────────────────
 

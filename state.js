@@ -43,9 +43,8 @@ function saveSyncQueues() {
 function loadProfiles() {
   try { profiles = JSON.parse(localStorage.getItem('bt_profiles') || '[]'); } catch { profiles = []; }
   activeProfileId = localStorage.getItem('bt_active_profile');
-  const legacyFamilyId = localStorage.getItem('bt_family_id');
   if (profiles.length === 0) {
-    const p = { id: crypto.randomUUID(), name: 'Mon bébé', emoji: '👶', familyId: legacyFamilyId || null };
+    const p = { id: crypto.randomUUID(), name: 'Mon bébé', emoji: '👶', familyId: null };
     profiles = [p]; activeProfileId = p.id; saveProfiles();
   }
   if (!activeProfileId || !profiles.find(p => p.id === activeProfileId))

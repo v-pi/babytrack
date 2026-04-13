@@ -55,19 +55,6 @@ function fmtAgo(ms) {
   return `il y a ${m}m ${String(totalSec % 60).padStart(2,'0')}s`;
 }
 
-/** Group an array of logs by calendar day, most recent day first. */
-function groupByDay(logs) {
-  const byDay = {};
-  logs.forEach(l => {
-    const key = new Date(l.timestamp || l.start).toDateString();
-    if (!byDay[key]) byDay[key] = [];
-    byDay[key].push(l);
-  });
-  return Object.keys(byDay)
-    .sort((a, b) => new Date(b) - new Date(a))
-    .map(key => ({ label: fmtDayLabel(new Date(key)), logs: byDay[key].slice().reverse() }));
-}
-
 /**
  * Escape a string for safe insertion into HTML (prevents XSS).
  * Use whenever user-supplied data is concatenated into innerHTML.

@@ -20,11 +20,9 @@ window.onload = async () => {
 
   // IndexedDB can be blocked in private browsing (iOS Safari) or if storage
   // is full. Degrade gracefully: the app still works, data just won't persist.
-  let idbAvailable = true;
   try {
     await openDB();
   } catch (err) {
-    idbAvailable = false;
     console.warn('IndexedDB unavailable:', err);
     // Show a non-blocking banner instead of a silent empty state
     const banner = document.createElement('div');
@@ -196,8 +194,6 @@ function setBottlePreset(val) {
   if (!input) return;
   input.value = val;
 }
-
-function updateBottleDisplay() { /* kept for compatibility — input is now the display */ }
 
 function logBottle() {
   const input = document.getElementById('bottle-vol-input');
