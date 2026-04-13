@@ -17,9 +17,39 @@ const SUPABASE_KEY = 'sb_publishable_EUJrpx_XbBds3EPk1rCtmQ_3qTWTaOX';
 let supabaseClient = null;
 let _realtimeChannels = [];
 
-function initSupabase() {
+// ── ANONYMOUS AUTH ────────────────────────────────────────────────────────────
+// Called once at app start (see bottom of file).
+// Signs in anonymously so every Supabase request carries a valid JWT.
+// The session is persisted in localStorage by the Supabase SDK and is
+// automatically refreshed — completely transparent to the user.
+async function ensureAnonAuth() {
+  if (!window.supabase) return;
+  try {
+    // Temporary client with no custom headers — only used to establish the
+    // auth session. The session token is stored in localStorage under the
+    // project-specific key 'sb-<ref>-auth-token' and picked up by all
+    // subsequent createClient() calls automatically.
+    const authClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+    const { data: { session } } = await authClient.auth.getSession();
+    if (!session) {
+      await authClient.auth.signInAnonymously();
+    }
+  } catch (e) {
+    // Non-fatal: app works offline, auth will retry on next sync.
+    console.warn('[BabyTrack] Anon auth skipped (offline?):', e.message);
+  }
+}
+
+// ── SUPABASE CLIENT INIT ──────────────────────────────────────────────────────
+async function initSupabase() {
+  // Guarantee a session exists before creating the main client.
+  // If the user is offline this is a fast no-op.
+  await ensureAnonAuth();
+
   supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
     global: {
+      // x-family-id is our second layer of access control (RLS policy).
+      // The JWT from anon auth is the first layer — added automatically.
       headers: { 'x-family-id': familyId || '' }
     }
   });
@@ -105,9 +135,9 @@ async function setRemoteTimer(type, side, startTime) {
 
   if (startTime !== null) {
     await supabaseClient.from('active_timers').upsert({
-      family_id: familyId, 
-      type: type, 
-      side: dbSide, 
+      family_id: familyId,
+      type: type,
+      side: dbSide,
       start_time: startTime
     });
   } else {
@@ -123,7 +153,6 @@ async function setRemoteTimer(type, side, startTime) {
 /**
  * Push the active profile's name + emoji into the `families` table.
  * Called after every profile save and on createFamily.
- * Requires baby_name and baby_emoji columns (see 3.sql migration).
  */
 async function pushBabyNameToRemote() {
   if (!supabaseClient || !navigator.onLine || !familyId) return;
@@ -213,6 +242,10 @@ async function createFamily() {
   const newFamilyId = crypto.randomUUID();
   const p = getActiveProfile();
 
+  // Ensure the anon session exists before the INSERT so the trigger's
+  // auth.uid() check passes and auth_user_id can be populated.
+  await ensureAnonAuth();
+
   const tmp = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
     global: { headers: { 'x-family-id': newFamilyId } }
   });
@@ -263,4 +296,14 @@ function toMs(v) {
   if (!v) return Date.now();
   if (typeof v === 'number') return v;
   return new Date(v).getTime();
+}
+
+// ── AUTO-INIT ANON AUTH ON PAGE LOAD ─────────────────────────────────────────
+// Runs as soon as this script is parsed. Establishes the JWT session in the
+// background so it is ready before the user ever taps "Créer ma famille".
+// Safe to call multiple times (no-op if a session already exists).
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', ensureAnonAuth);
+} else {
+  ensureAnonAuth();
 }
