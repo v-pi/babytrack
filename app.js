@@ -256,9 +256,7 @@ function switchTab(name, silent) {
   // Stop per-tab ticks when leaving
   if (name !== 'feed')   stopTick(TICK_LAST_FEED);
   if (name !== 'bottle') stopTick(TICK_LAST_BOTTLE);
-  if (!silent && name === 'feed')     renderFeed();
-  if (!silent && name === 'timeline') renderTimeline();
-  if (!silent && name === 'stats')    renderStats();
+  if (!silent) renderCurrentTab();
 }
 
 // ── TOAST ─────────────────────────────────────────────────────────────────────
