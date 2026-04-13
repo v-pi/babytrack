@@ -22,6 +22,20 @@ function startLastFeedTick() {
   });
 }
 
+function startLastBottleTick() {
+  stopTick(TICK_LAST_BOTTLE);
+  const bottleLogs = allLogs.filter(l => l.type === 'bottle').sort((a,b) => b.timestamp - a.timestamp);
+  const el = document.getElementById('last-bottle-global');
+  if (!el) return;
+  if (!bottleLogs.length) { el.classList.remove('visible'); return; }
+  const lastTs = bottleLogs[0].timestamp;
+  const lastVol = bottleLogs[0].volume || 0;
+  el.classList.add('visible');
+  startTick(TICK_LAST_BOTTLE, () => {
+    el.textContent = 'Dernier biberon (' + lastVol + ' ml) : ' + fmtAgo(Date.now() - lastTs);
+  });
+}
+
 // ── UNIFIED DAY NAV ───────────────────────────────────────────────────────────
 function getHistDays(logs) {
   const keys = [...new Set(logs.map(l => new Date(l.timestamp || l.start).toDateString()))];
@@ -165,7 +179,7 @@ function renderBottle() {
   const el   = document.getElementById('bottle-history');
   const logs = allLogs.filter(l => l.type === 'bottle');
   const days = getHistDays(logs);
-  if (!days.length) { el.innerHTML = '<div class="empty-state">Aucun biberon enregistré</div>'; return; }
+  if (!days.length) { el.innerHTML = '<div class="empty-state">Aucun biberon enregistré</div>'; startLastBottleTick(); return; }
   histDay.bottle = Math.max(0, Math.min(histDay.bottle || 0, days.length - 1));
   const dayLogs = logs
     .filter(l => new Date(l.timestamp).toDateString() === days[histDay.bottle])
@@ -180,6 +194,7 @@ function renderBottle() {
       '<div class="h-edit-hint">✎</div>' +
       '</div>'
     ).join('') : '<div class="empty-state">Aucun biberon ce jour</div>') + '</div>';
+  startLastBottleTick();
 }
 
 /** Render only the currently visible tab. Call this after any data mutation. */
@@ -304,7 +319,7 @@ function renderStats() {
   const cutoffTs = today.getTime() - N * 86400000;
   const statsMap = {};
   days.forEach(dk => {
-    statsMap[dk] = { feedLeft: 0, feedRight: 0, sleepMs: 0, wet: 0, dirty: 0, mixed: 0 };
+    statsMap[dk] = { feedLeft: 0, feedRight: 0, sleepMs: 0, wet: 0, dirty: 0, mixed: 0, bottleVol: 0 };
   });
 
   allLogs.forEach(l => {
@@ -322,6 +337,8 @@ function renderStats() {
       if      (l.diaperType === 'wet')   bucket.wet++;
       else if (l.diaperType === 'dirty') bucket.dirty++;
       else if (l.diaperType === 'mixed') bucket.mixed++;
+    } else if (l.type === 'bottle') {
+      bucket.bottleVol += (l.volume || 0);
     }
   });
 
@@ -332,12 +349,21 @@ function renderStats() {
   const dDirty       = days.map(dk => statsMap[dk].dirty);
   const dMixed       = days.map(dk => statsMap[dk].mixed);
 
+  const dMixed       = days.map(dk => statsMap[dk].mixed);
+  const bottleVolMl  = days.map(dk => statsMap[dk].bottleVol);
+
   // ── Feed chart ────────────────────────────────────────────────────────────
   const feedData = days.map((_, i) => ({ segments: [
     { val: feedLeftMin[i],  fill: 'var(--pink)' },
     { val: feedRightMin[i], fill: 'var(--blue)' }
   ]}));
   const feedMax = niceMax(Math.max(...feedData.map(d => d.segments.reduce((a, s) => a + s.val, 0))));
+
+  // ── Bottle chart ──────────────────────────────────────────────────────────
+  const bottleData = days.map((_, i) => ({ segments: [
+    { val: bottleVolMl[i], fill: 'var(--teal)' }
+  ]}));
+  const bottleMax = niceMax(Math.max(...bottleData.map(d => d.segments[0].val)));
 
   // ── Sleep chart ───────────────────────────────────────────────────────────
   const sleepData = days.map((_, i) => ({ segments: [
@@ -353,14 +379,19 @@ function renderStats() {
   ]}));
   const diaperMax = niceMax(Math.max(...diaperData.map(d => d.segments.reduce((a, s) => a + s.val, 0))));
 
-  // ── Feed heatmap ──────────────────────────────────────────────────────────
-  const feedLogs30 = allLogs.filter(l => l.type === 'feed' && (l.start || 0) >= cutoffTs);
+  // ── Heatmap logs ──────────────────────────────────────────────────────────
+  const feedLogs30  = allLogs.filter(l => l.type === 'feed'  && (l.start || 0) >= cutoffTs);
+  const sleepLogs30 = allLogs.filter(l => l.type === 'sleep' && (l.start || 0) >= cutoffTs);
 
   el.innerHTML =
     buildChartCard('🤱 Allaitement — 30 derniers jours', [
       { dotStyle: 'background:var(--pink)',  label: 'Gauche' },
       { dotStyle: 'background:var(--blue)',  label: 'Droit'  }
     ], buildBarSVG(feedData, { yMax: feedMax, yUnit: 'min', N })) +
+
+    buildChartCard('🍼 Biberon — 30 derniers jours', [
+      { dotStyle: 'background:var(--teal)', label: 'Volume total' }
+    ], buildBarSVG(bottleData, { yMax: bottleMax, yUnit: 'ml', N })) +
 
     buildChartCard('🌙 Sommeil — 30 derniers jours', [
       { dotStyle: 'background:var(--green)', label: 'Durée totale' }
@@ -372,56 +403,55 @@ function renderStats() {
       { dotStyle: 'background:linear-gradient(135deg,var(--blue) 50%,var(--amber) 50%)', label: 'Mixte' }
     ], buildBarSVG(diaperData, { yMax: diaperMax, yUnit: '', N, hasMixed: true })) +
 
-    buildChartCard('🔮 Rythme typique des tétées', [], buildFeedHeatmapSVG(feedLogs30, N));
+    buildChartCard('🔮 Rythme typique des tétées', [], buildRhythmHeatmapSVG(feedLogs30, N, {
+      color: '#8b5cf6', alpha: 0.07, minPx: 4, useDuration: true,
+      caption: (n, d) => `${n} tétées sur ${d} jour${d > 1 ? 's' : ''} — plus c'est dense, plus c'est habituel`
+    })) +
+
+    buildChartCard('🌙 Rythme typique du sommeil', [], buildRhythmHeatmapSVG(sleepLogs30, N, {
+      color: '#4caf82', alpha: 0.10, minPx: 8, useDuration: true,
+      caption: (n, d) => `${n} siestes/nuits sur ${d} jour${d > 1 ? 's' : ''} — les plages sombres = moments habituels`
+    }));
 }
 
-// ── FEED HEATMAP ──────────────────────────────────────────────────────────────
-// Chaque tétée des 30 derniers jours est dessinée sur un axe 0h-24h
-// avec une très faible opacité. Les créneaux habituels s'assombrissent
-// naturellement par accumulation (transparence additive).
-// Formule : opacité effective = 1 - (1 - α)^n
-//   α=0.07, n=10 → ~51%  |  n=20 → ~77%  |  n=30 → ~90%
-function buildFeedHeatmapSVG(logs, N) {
+// ── RHYTHM HEATMAP (generic) ──────────────────────────────────────────────────
+// Draws all logs from the last N days onto a 0h–24h axis with low opacity.
+// Dense zones emerge from additive transparency: opacity = 1-(1-α)^n
+// Options: { color, alpha, minPx, useDuration, caption(n, nDays) }
+function buildRhythmHeatmapSVG(logs, N, { color, alpha, minPx, useDuration, caption }) {
   const W = 340, H = 88;
   const padL = 8, padR = 8, padT = 10, padB = 22;
   const plotW = W - padL - padR;
-  const trackH = H - padT - padB;   // 56px de hauteur de piste
+  const trackH = H - padT - padB;
   const DAY_MS = 86400000;
-  const ALPHA   = 0.07;              // opacité par barre
-  const MIN_PX  = 4;                 // largeur minimale visible (feed très court)
-  const PURPLE  = '#8b5cf6';
 
-  // ── Fond de piste + ticks ────────────────────────────────────────────────
   let svg = `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" style="width:100%;display:block">`;
+  svg += `<rect x="${padL}" y="${padT}" width="${plotW}" height="${trackH}" fill="${color}" fill-opacity="0.05" rx="4"/>`;
 
-  // Fond légèrement teinté
-  svg += `<rect x="${padL}" y="${padT}" width="${plotW}" height="${trackH}" fill="${PURPLE}" fill-opacity="0.05" rx="4"/>`;
-
-  // Lignes de quart de journée + labels
   [0, 6, 12, 18, 24].forEach(h => {
     const x = +(padL + (h / 24) * plotW).toFixed(1);
-    svg += `<line x1="${x}" y1="${padT}" x2="${x}" y2="${padT + trackH}" stroke="${PURPLE}" stroke-opacity="0.15" stroke-width="1" stroke-dasharray="2,2"/>`;
+    svg += `<line x1="${x}" y1="${padT}" x2="${x}" y2="${padT + trackH}" stroke="${color}" stroke-opacity="0.15" stroke-width="1" stroke-dasharray="2,2"/>`;
     svg += `<text x="${x}" y="${H - 4}" text-anchor="middle" font-size="7" fill="var(--text-muted)" font-family="-apple-system,sans-serif">${String(h).padStart(2,'0')}h</text>`;
   });
 
-  // ── Barres superposées ────────────────────────────────────────────────────
   logs.forEach(l => {
     const d   = new Date(l.start);
     const sec = d.getHours() * 3600 + d.getMinutes() * 60 + d.getSeconds();
     const x   = +(padL + (sec / 86400) * plotW).toFixed(2);
-    const w   = Math.max((l.duration || 0) / DAY_MS * plotW, MIN_PX).toFixed(2);
-    svg += `<rect x="${x}" y="${padT}" width="${w}" height="${trackH}" fill="${PURPLE}" fill-opacity="${ALPHA}" rx="2"/>`;
+    const w   = useDuration
+      ? Math.max((l.duration || 0) / DAY_MS * plotW, minPx).toFixed(2)
+      : minPx.toFixed(2);
+    svg += `<rect x="${x}" y="${padT}" width="${w}" height="${trackH}" fill="${color}" fill-opacity="${alpha}" rx="2"/>`;
   });
 
   svg += '</svg>';
 
-  // Sous-titre (nombre de tétées analysées)
   const nDays = Math.min(N, new Set(logs.map(l => new Date(l.start).toDateString())).size);
-  const caption = logs.length
-    ? `<div class="stats-heatmap-caption">${logs.length} tétées sur ${nDays} jour${nDays > 1 ? 's' : ''} — plus c'est dense, plus c'est habituel</div>`
-    : `<div class="stats-heatmap-caption empty">Aucune tétée enregistrée sur 30 jours</div>`;
+  const cap = logs.length
+    ? `<div class="stats-heatmap-caption">${caption(logs.length, nDays)}</div>`
+    : `<div class="stats-heatmap-caption empty">Aucune donnée sur 30 jours</div>`;
 
-  return svg + caption;
+  return svg + cap;
 }
 
 // ── PROFILE LIST & EMOJI GRID ─────────────────────────────────────────────────

@@ -241,8 +241,9 @@ function switchTab(name, silent) {
   currentTab = name;
   sessionStorage.setItem('bt_tab', name);
   window.scrollTo(0, 0);
-  // Stop the "last feed" tick when leaving the feed tab
-  if (name !== 'feed') stopTick(TICK_LAST_FEED);
+  // Stop per-tab ticks when leaving
+  if (name !== 'feed')   stopTick(TICK_LAST_FEED);
+  if (name !== 'bottle') stopTick(TICK_LAST_BOTTLE);
   if (!silent && name === 'feed')     renderFeed();
   if (!silent && name === 'timeline') renderTimeline();
   if (!silent && name === 'stats')    renderStats();
@@ -481,7 +482,8 @@ document.addEventListener('visibilitychange', () => {
   if (!document.hidden) {
     ['left','right'].forEach(s => { if (breastActive[s]) activateBreastTimerLocal(s, breastActive[s].start); });
     if (sleepActive) activateSleepTimerLocal(sleepActive.start);
-    if (currentTab === 'feed') startLastFeedTick();
+    if (currentTab === 'feed')   startLastFeedTick();
+    if (currentTab === 'bottle') startLastBottleTick();
     
     // Une seule commande suffit, elle gère maintenant les retry, delete et pull.
     if (supabaseClient && navigator.onLine) syncWithRemote();

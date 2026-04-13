@@ -13,7 +13,7 @@
   <script>
     (function(){var t=localStorage.getItem('bt_theme');if(t==='dark')document.documentElement.setAttribute('data-theme','dark');})();
   </script>
-  <link rel="stylesheet" href="main.css?v=38"/>
+  <link rel="stylesheet" href="main.css?v=39"/>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>
@@ -99,6 +99,7 @@
         <button class="preset-btn" onclick="setBottlePreset(210)">210</button>
       </div>
       <button class="bottle-log-btn" onclick="logBottle()">Enregistrer ✓</button>
+      <div class="last-feed-global" id="last-bottle-global"></div>
     </div>
     <div class="summary-row">
       <div class="summary-chip teal"><div class="s-val" id="sum-bottle-count">0</div><div class="s-lab">biberons auj.</div></div>
@@ -283,11 +284,11 @@
 <div class="toast" id="toast"></div>
 
 <!-- ── SCRIPTS (all at root level, versioned) ── -->
-<script src="utils.js?v=38"></script>
-<script src="db.js?v=38"></script>
-<script src="state.js?v=38"></script>
-<script src="render.js?v=38"></script>
-<script src="sync.js?v=38"></script>
-<script src="app.js?v=38"></script>
+<script src="utils.js?v=39"></script>
+<script src="db.js?v=39"></script>
+<script src="state.js?v=39"></script>
+<script src="render.js?v=39"></script>
+<script src="sync.js?v=39"></script>
+<script src="app.js?v=39"></script>
 </body>
 </html>
