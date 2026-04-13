@@ -31,6 +31,22 @@ window.onload = async () => {
     document.body.prepend(banner);
   }
 
+  // Delegated listeners for history items (replaces inline onclick with data-id)
+  ['feed-history','sleep-history','diaper-history','bottle-history'].forEach(containerId => {
+    document.getElementById(containerId).addEventListener('click', e => {
+      const item = e.target.closest('[data-id]');
+      if (item) openEdit(item.dataset.id);
+    });
+  });
+
+  // Delegated listeners for profile list (data-profile-id / data-edit-id)
+  document.getElementById('profile-list').addEventListener('click', e => {
+    const editBtn = e.target.closest('[data-edit-id]');
+    if (editBtn) { e.stopPropagation(); openEditProfile(editBtn.dataset.editId); return; }
+    const item = e.target.closest('[data-profile-id]');
+    if (item) switchToProfile(item.dataset.profileId);
+  });
+
   loadProfiles();
   updateHeaderProfile();
 

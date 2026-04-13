@@ -74,8 +74,8 @@ function renderFeed() {
   el.innerHTML = renderDayNav('feed', histDay.feed, days) +
     '<div class="history-list">' +
     (dayLogs.length ? dayLogs.map(l =>
-      '<div class="history-item' + (pendingSyncIds.has(l.id) ? ' pending' : '') + '" onclick="openEdit(\'' + l.id + '\')">' +
-      '<div class="h-dot ' + l.side + '"></div>' +
+      '<div class="history-item' + (pendingSyncIds.has(l.id) ? ' pending' : '') + '" data-id="' + escapeHtml(l.id) + '">' +
+      '<div class="h-dot ' + escapeHtml(l.side) + '"></div>' +
       '<div class="h-main"><div class="h-label">Sein ' + (l.side==='left'?'gauche':'droit') + '</div>' +
       '<div class="h-range">' + fmtTime(l.start) + ' → ' + fmtTime(l.end) + '</div></div>' +
       '<div class="h-dur">' + fmtDur(l.duration) + '</div><div class="h-edit-hint">✎</div>' +
@@ -100,7 +100,7 @@ function renderSleep() {
   el.innerHTML = renderDayNav('sleep', histDay.sleep, days) +
     '<div class="history-list">' +
     (dayLogs.length ? dayLogs.map(l =>
-      '<div class="history-item' + (pendingSyncIds.has(l.id) ? ' pending' : '') + '" onclick="openEdit(\'' + l.id + '\')">' +
+      '<div class="history-item' + (pendingSyncIds.has(l.id) ? ' pending' : '') + '" data-id="' + escapeHtml(l.id) + '">' +
       '<div class="h-dot sleep"></div>' +
       '<div class="h-main"><div class="h-label">Sommeil</div>' +
       '<div class="h-range">' + fmtTime(l.start) + ' → ' + fmtTime(l.end) + '</div></div>' +
@@ -125,8 +125,8 @@ function renderDiapers() {
   el.innerHTML = renderDayNav('diaper', histDay.diaper, days) +
     '<div class="history-list">' +
     (dayLogs.length ? dayLogs.map(l =>
-      '<div class="history-item' + (pendingSyncIds.has(l.id) ? ' pending' : '') + '" onclick="openEdit(\'' + l.id + '\')">' +
-      '<div class="h-dot ' + l.diaperType + '"></div>' +
+      '<div class="history-item' + (pendingSyncIds.has(l.id) ? ' pending' : '') + '" data-id="' + escapeHtml(l.id) + '">' +
+      '<div class="h-dot ' + escapeHtml(l.diaperType) + '"></div>' +
       '<div class="h-main"><div class="h-label">' + (l.diaperType==='wet'?'💧 Pipi':l.diaperType==='mixed'?'💧💩 Mixte':'💩 Selle') + '</div>' +
       '<div class="h-range">' + fmtTime(l.timestamp) + '</div></div>' +
       '<div class="h-edit-hint">✎</div>' +
@@ -164,9 +164,9 @@ function renderTimeline() {
   const dl = logs.filter(l => l.type === 'diaper');
   c.innerHTML = '<div class="timeline-day"><div class="tl-body" style="padding-top:20px">' +
     '<div class="tl-ticks-row"><div class="tl-tick-spacer"></div><div class="tl-ticks">' + ticksHtml + '</div></div>' +
-    (fl.length ? '<div class="tl-row"><div class="tl-row-label">🤱</div><div class="tl-track feed-track">' + fl.map(l=>'<div class="tl-bar ' + l.side + '" style="left:' + pct(l.start) + '%;width:' + dpct(l.duration) + '%"></div>').join('') + '</div></div>' : '') +
+    (fl.length ? '<div class="tl-row"><div class="tl-row-label">🤱</div><div class="tl-track feed-track">' + fl.map(l=>'<div class="tl-bar ' + escapeHtml(l.side) + '" style="left:' + pct(l.start) + '%;width:' + dpct(l.duration) + '%"></div>').join('') + '</div></div>' : '') +
     (sl.length ? '<div class="tl-row"><div class="tl-row-label">🌙</div><div class="tl-track sleep-track">' + sl.map(l=>'<div class="tl-bar sleep" style="left:' + pct(l.start) + '%;width:' + dpct(l.duration) + '%"></div>').join('') + '</div></div>' : '') +
-    (dl.length ? '<div class="tl-row"><div class="tl-row-label">💧</div><div class="tl-track diaper-track">' + dl.map(l=>'<div class="tl-dot ' + l.diaperType + '" style="left:' + pct(l.timestamp) + '%"></div>').join('') + '</div></div>' : '') +
+    (dl.length ? '<div class="tl-row"><div class="tl-row-label">💧</div><div class="tl-track diaper-track">' + dl.map(l=>'<div class="tl-dot ' + escapeHtml(l.diaperType) + '" style="left:' + pct(l.timestamp) + '%"></div>').join('') + '</div></div>' : '') +
     '</div></div>';
 }
 
@@ -187,7 +187,7 @@ function renderBottle() {
   el.innerHTML = renderDayNav('bottle', histDay.bottle, days) +
     '<div class="history-list">' +
     (dayLogs.length ? dayLogs.map(l =>
-      '<div class="history-item' + (pendingSyncIds.has(l.id) ? ' pending' : '') + '" onclick="openEdit(\'' + l.id + '\')">' +
+      '<div class="history-item' + (pendingSyncIds.has(l.id) ? ' pending' : '') + '" data-id="' + escapeHtml(l.id) + '">' +
       '<div class="h-dot bottle"></div>' +
       '<div class="h-main"><div class="h-label">🍼 ' + (l.volume || 0) + ' ml</div>' +
       '<div class="h-range">' + fmtTime(l.timestamp) + '</div></div>' +
@@ -443,14 +443,15 @@ function renderProfileList() {
   document.getElementById('profile-list').innerHTML = profiles.map(p => {
     const safeName  = escapeHtml(p.name);
     const safeEmoji = escapeHtml(p.emoji);
-    return '<div class="profile-item ' + (p.id===activeProfileId?'active-profile':'') + '" onclick="switchToProfile(\'' + p.id + '\')">' +
+    const safeId    = escapeHtml(p.id);
+    return '<div class="profile-item ' + (p.id===activeProfileId?'active-profile':'') + '" data-profile-id="' + safeId + '">' +
       '<div class="profile-item-emoji">' + safeEmoji + '</div>' +
       '<div class="profile-item-info">' +
       '<div class="profile-item-name">' + safeName + '</div>' +
       '<div class="profile-item-sub">' + (p.familyId?'Synchronisé':'Local uniquement') + '</div>' +
       '</div>' +
       (p.id===activeProfileId?'<div class="profile-item-badge">Actif</div>':'') +
-      '<button class="profile-item-edit" onclick="event.stopPropagation();openEditProfile(\'' + p.id + '\')">✎</button>' +
+      '<button class="profile-item-edit" data-edit-id="' + safeId + '">✎</button>' +
       '</div>';
   }).join('');
 }
