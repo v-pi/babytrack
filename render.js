@@ -112,8 +112,8 @@ function renderSleep() {
 // ── DIAPERS ───────────────────────────────────────────────────────────────────
 function renderDiapers() {
   const tl = todayLogs().filter(l => l.type === 'diaper');
-  document.getElementById('diaper-wet-count').textContent   = tl.filter(l => l.diaperType === 'wet').length;
-  document.getElementById('diaper-dirty-count').textContent = tl.filter(l => l.diaperType === 'dirty').length;
+  document.getElementById('diaper-wet-count').textContent   = tl.filter(l => l.diaperType === 'wet'   || l.diaperType === 'mixed').length;
+  document.getElementById('diaper-dirty-count').textContent = tl.filter(l => l.diaperType === 'dirty' || l.diaperType === 'mixed').length;
   const el   = document.getElementById('diaper-history');
   const logs = allLogs.filter(l => l.type === 'diaper');
   const days = getHistDays(logs);
@@ -127,7 +127,7 @@ function renderDiapers() {
     (dayLogs.length ? dayLogs.map(l =>
       '<div class="history-item' + (pendingSyncIds.has(l.id) ? ' pending' : '') + '" onclick="openEdit(\'' + l.id + '\')">' +
       '<div class="h-dot ' + l.diaperType + '"></div>' +
-      '<div class="h-main"><div class="h-label">' + (l.diaperType==='wet'?'💧 Pipi':'💩 Selle') + '</div>' +
+      '<div class="h-main"><div class="h-label">' + (l.diaperType==='wet'?'💧 Pipi':l.diaperType==='mixed'?'💧💩 Mixte':'💩 Selle') + '</div>' +
       '<div class="h-range">' + fmtTime(l.timestamp) + '</div></div>' +
       '<div class="h-edit-hint">✎</div>' +
       '</div>'

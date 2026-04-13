@@ -258,6 +258,7 @@ body{
 .tl-dot{position:absolute;top:50%;transform:translate(-50%,-50%);width:11px;height:11px;border-radius:50%;border:2px solid var(--card)}
 .tl-dot.wet{background:var(--blue)}
 .tl-dot.dirty{background:var(--amber)}
+.tl-dot.mixed{background:linear-gradient(135deg, var(--blue) 50%, var(--amber) 50%)}
 .tl-legend{display:flex;flex-wrap:wrap;gap:10px;padding:10px 14px;border-top:1px solid var(--border)}
 .tl-leg-item{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--text-muted)}
 .tl-leg-bar{width:14px;height:8px;border-radius:3px}
