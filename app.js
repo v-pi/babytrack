@@ -130,6 +130,10 @@ function stopBreastTimerLocal(side) {
   const el = document.getElementById('timer-'+side);
   if (el) el.textContent = '00:00';
   saveSession();
+  // Re-render so history and "last feed" counter reflect the cleared timer state.
+  // Covers local stops (race condition with logAction) and remote stops from the
+  // active_timers realtime channel (which doesn't go through logAction).
+  renderCurrentTab();
 }
 
 function toggleSleep() {
@@ -170,6 +174,8 @@ function stopSleepTimerLocal() {
   if (el) el.textContent = '--:--';
   stopTick('sleep');
   saveSession();
+  // Same rationale as stopBreastTimerLocal — ensures render after state is cleared.
+  renderCurrentTab();
 }
 
 
@@ -256,7 +262,9 @@ function switchTab(name, silent) {
   // Stop per-tab ticks when leaving
   if (name !== 'feed')   stopTick(TICK_LAST_FEED);
   if (name !== 'bottle') stopTick(TICK_LAST_BOTTLE);
-  if (!silent) renderCurrentTab();
+  if (!silent && name === 'feed')     renderFeed();
+  if (!silent && name === 'timeline') renderTimeline();
+  if (!silent && name === 'stats')    renderStats();
 }
 
 // ── TOAST ─────────────────────────────────────────────────────────────────────
