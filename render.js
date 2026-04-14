@@ -259,8 +259,8 @@ function buildBarSVG(data, { yMax, yUnit, N, hasMixed }) {
       yBase -= h;
       svg += `<rect x="${x}" y="${yBase.toFixed(2)}" width="${Math.max(barW, 1).toFixed(2)}" height="${h.toFixed(2)}" fill="${seg.fill}" rx="1.5"/>`;
     });
-    // X label: first, last, every 7th
-    if (i === 0 || i === N - 1 || i % 7 === 0) {
+	// X label: first, last, every 7th (but don't draw the 7th if it's too close to the end)
+    if (i === 0 || i === N - 1 || (i % 7 === 0 && (N - 1 - i) > 4)) {
       const d = new Date(today);
       d.setDate(today.getDate() - (N - 1 - i));
       const lbl = String(d.getDate()).padStart(2, '0') + '/' + String(d.getMonth() + 1).padStart(2, '0');
