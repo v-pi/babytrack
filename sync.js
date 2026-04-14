@@ -82,22 +82,56 @@ async function syncWithRemote() {
       saveSyncQueues();
     }
 
-    // 3. Récupérer l'historique complet depuis le serveur
-    // Écraser la base locale permet de supprimer automatiquement les éventuels "zombies"
-    const { data, error } = await supabaseClient
-      .from('logs').select('*').eq('family_id', familyId);
-    if (error) throw error;
-    if (data) {
-      allLogs = data;
-      renderCurrentTab();
-      await dbClear();
-      for (const l of data) await dbPut(l);
+    // 3. Pousser les chronos en attente hors ligne
+    await pushPendingTimers();
+
+    // 4. Récupérer les ID pour détecter les suppressions externes (très léger en data)
+    const { data: serverIds } = await supabaseClient.from('logs').select('id').eq('family_id', familyId);
+    let uiChanged = false;
+    
+    if (serverIds) {
+      const serverIdSet = new Set(serverIds.map(x => x.id));
+      // Filtre les logs locaux effacés à distance (et pas en cours d'ajout chez nous)
+      const toDelete = allLogs.filter(l => !serverIdSet.has(l.id) && !pendingSyncIds.has(l.id));
+      for (const dLog of toDelete) {
+        allLogs = allLogs.filter(l => l.id !== dLog.id);
+        await dbDel(dLog.id);
+        uiChanged = true;
+      }
     }
 
-    // 4. Synchroniser les chronomètres en cours
+    // 5. Delta Sync (récupérer uniquement ce qui a changé depuis la dernière fois)
+    const syncKey = 'bt_last_sync_' + familyId;
+    const lastSync = allLogs.length > 0 ? (localStorage.getItem(syncKey) || '1970-01-01T00:00:00Z') : '1970-01-01T00:00:00Z';
+    
+    const { data: recentData, error } = await supabaseClient
+      .from('logs').select('*')
+      .eq('family_id', familyId)
+      .gte('updated_at', lastSync);
+      
+    if (error) throw error;
+
+    if (recentData && recentData.length > 0) {
+      for (const sLog of recentData) {
+        const idx = allLogs.findIndex(l => l.id === sLog.id);
+        // Eviter d'écraser une modif locale non encore envoyée (Race condition fix)
+        if (!pendingSyncIds.has(sLog.id) && !pendingDeletes.has(sLog.id)) {
+          if (idx >= 0) allLogs[idx] = sLog;
+          else allLogs.push(sLog);
+          await dbPut(sLog);
+          uiChanged = true;
+        }
+      }
+    }
+    
+    // MAJ de l'horodatage avec une marge de 5 secondes de sécurité
+    localStorage.setItem(syncKey, new Date(Date.now() - 5000).toISOString());
+    if (uiChanged) renderCurrentTab();
+
+    // 6. Synchroniser les chronomètres en cours
     await syncTimersFromRemote();
 
-    // 5. Synchroniser le profil (nom / emoji bébé)
+    // 7. Synchroniser le profil
     await syncBabyNameFromRemote();
 
     setSyncDot('ok');
@@ -109,6 +143,36 @@ async function syncWithRemote() {
 }
 
 // ── TIMER SYNC ───────────────────────────────────────────────────────────────
+async function pushPendingTimers() {
+  if (!supabaseClient || !navigator.onLine || !familyId) return;
+  for (const key of Object.keys(pendingTimers)) {
+    const pt = pendingTimers[key];
+    const dbSide = pt.side || 'none';
+    let err;
+    if (pt.startTime !== null) {
+      const { error } = await supabaseClient.from('active_timers').upsert({
+        family_id: familyId, type: pt.type, side: dbSide, start_time: pt.startTime
+      });
+      err = error;
+    } else {
+      const { error } = await supabaseClient.from('active_timers')
+        .delete().eq('family_id', familyId).eq('type', pt.type).eq('side', dbSide);
+      err = error;
+    }
+    if (!err) {
+      delete pendingTimers[key];
+      saveSyncQueues();
+    }
+  }
+}
+
+async function setRemoteTimer(type, side, startTime) {
+  const key = type + '_' + (side || 'none');
+  pendingTimers[key] = { type, side, startTime };
+  saveSyncQueues();
+  pushPendingTimers(); // Lance la synchro en fond, ou garde en attente si hors ligne
+}
+
 async function syncTimersFromRemote() {
   if (!supabaseClient || !familyId) return;
   const { data: timers } = await supabaseClient
@@ -117,35 +181,17 @@ async function syncTimersFromRemote() {
 
   // Sync Allaitement
   ['left', 'right'].forEach(side => {
+    if (pendingTimers['feed_' + side]) return; // On ignore si un chrono local est en attente
     const a = timers.find(t => t.type === 'feed' && t.side === side);
     if (a && !breastActive[side]) activateBreastTimerLocal(side, toMs(a.start_time));
     else if (!a && breastActive[side]) stopBreastTimerLocal(side);
   });
 
-  // Sync Sommeil (on cherche 'none' au lieu de null)
-  const sa = timers.find(t => t.type === 'sleep' && (t.side === 'none' || !t.side));
-  if (sa && !sleepActive)       activateSleepTimerLocal(toMs(sa.start_time));
-  else if (!sa && sleepActive)  stopSleepTimerLocal();
-}
-
-/** Upsert ou delete avec protection contre le NULL dans la Primary Key */
-async function setRemoteTimer(type, side, startTime) {
-  if (!supabaseClient || !navigator.onLine || !familyId) return;
-  const dbSide = side || 'none'; // 'none' au lieu de null pour satisfaire la PK SQL
-
-  if (startTime !== null) {
-    await supabaseClient.from('active_timers').upsert({
-      family_id: familyId,
-      type: type,
-      side: dbSide,
-      start_time: startTime
-    });
-  } else {
-    await supabaseClient.from('active_timers')
-      .delete()
-      .eq('family_id', familyId)
-      .eq('type', type)
-      .eq('side', dbSide);
+  // Sync Sommeil
+  if (!pendingTimers['sleep_none']) {
+    const sa = timers.find(t => t.type === 'sleep' && (t.side === 'none' || !t.side));
+    if (sa && !sleepActive)       activateSleepTimerLocal(toMs(sa.start_time));
+    else if (!sa && sleepActive)  stopSleepTimerLocal();
   }
 }
 
@@ -193,28 +239,24 @@ function setupRealtime() {
       filter: `family_id=eq.${familyId}`
     }, ({ eventType, new: n, old: o }) => {
       if (eventType === 'INSERT' || eventType === 'UPDATE') {
-        if (!n) return;
+        if (!n || pendingTimers[n.type + '_' + n.side]) return; // Ignorer si local override
         if (n.type === 'feed') activateBreastTimerLocal(n.side, toMs(n.start_time));
         else                   activateSleepTimerLocal(toMs(n.start_time));
       } else if (eventType === 'DELETE') {
-        if (!o) return;
+        if (!o || pendingTimers[o.type + '_' + o.side]) return;
         if (o.side === 'none' || o.type === 'sleep') stopSleepTimerLocal();
         else stopBreastTimerLocal(o.side);
       }
     })
-    // ── Logs ──────────────────────────────────────────────────────────────
-    .on('postgres_changes', {
-      event: '*', schema: 'public', table: 'logs',
-      filter: `family_id=eq.${familyId}`
-    }, ({ eventType, new: n, old: o }) => {
-      if (eventType === 'INSERT') {
-        if (!allLogs.find(l => l.id === n.id)) { allLogs.push(n); dbPut(n); renderCurrentTab(); }
-      } else if (eventType === 'DELETE') {
-        allLogs = allLogs.filter(l => l.id !== o.id); dbDel(o.id); renderCurrentTab();
-      } else if (eventType === 'UPDATE') {
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'logs', filter: `family_id=eq.${familyId}` }, ({ eventType, new: n, old: o }) => {
+      if (eventType === 'INSERT' || eventType === 'UPDATE') {
+        if (pendingSyncIds.has(n.id)) return; // Ignorer l'écho de sa propre action
         const idx = allLogs.findIndex(l => l.id === n.id);
         if (idx >= 0) allLogs[idx] = n; else allLogs.push(n);
         dbPut(n); renderCurrentTab();
+      } else if (eventType === 'DELETE') {
+        if (pendingDeletes.has(o.id)) return;
+        allLogs = allLogs.filter(l => l.id !== o.id); dbDel(o.id); renderCurrentTab();
       }
     })
     // ── Families (nom / emoji bébé depuis l'autre appareil) ───────────────

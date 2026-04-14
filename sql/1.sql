@@ -23,7 +23,8 @@ CREATE TABLE IF NOT EXISTS public.logs (
   duration bigint,
   "timestamp" bigint,
   "diaperType" text,
-  volume integer
+  volume integer,
+  updated_at timestamptz DEFAULT now()
 );
 
 CREATE TABLE IF NOT EXISTS public.active_timers (

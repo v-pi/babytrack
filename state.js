@@ -12,6 +12,7 @@ let familyId         = null;
 let allLogs          = [];
 let pendingSyncIds   = new Set(); // Logs à ajouter/modifier sur le serveur
 let pendingDeletes   = new Set(); // IDs à supprimer sur le serveur
+let pendingTimers    = {};        // [NOUVEAU] Chronos en attente de synchro { 'feed_left': { type, side, startTime } }
 let breastActive     = { left: null, right: null };
 let sleepActive      = null;
 let ticks            = {};
@@ -31,15 +32,17 @@ function loadSyncQueues() {
   try {
     pendingSyncIds = new Set(JSON.parse(localStorage.getItem('bt_pending_sync') || '[]'));
     pendingDeletes = new Set(JSON.parse(localStorage.getItem('bt_pending_del') || '[]'));
-  } catch { pendingSyncIds = new Set(); pendingDeletes = new Set(); }
+    pendingTimers  = JSON.parse(localStorage.getItem('bt_pending_timers') || '{}');
+  } catch { pendingSyncIds = new Set(); pendingDeletes = new Set(); pendingTimers = {}; }
 }
 
 function saveSyncQueues() {
   localStorage.setItem('bt_pending_sync', JSON.stringify([...pendingSyncIds]));
   localStorage.setItem('bt_pending_del', JSON.stringify([...pendingDeletes]));
+  localStorage.setItem('bt_pending_timers', JSON.stringify(pendingTimers));
 }
 
-// ── PROFILES (Ajoute juste loadSyncQueues à l'intérieur de loadProfiles) ─────
+// ── PROFILES ─────────────────────────────────────────────────────────────────
 function loadProfiles() {
   try { profiles = JSON.parse(localStorage.getItem('bt_profiles') || '[]'); } catch { profiles = []; }
   activeProfileId = localStorage.getItem('bt_active_profile');
@@ -50,7 +53,7 @@ function loadProfiles() {
   if (!activeProfileId || !profiles.find(p => p.id === activeProfileId))
     activeProfileId = profiles[0].id;
     
-  loadSyncQueues(); // <--- NOUVEAU
+  loadSyncQueues();
   try { lastBottleVol = parseInt(localStorage.getItem('bt_last_bottle_vol') || '0', 10) || 0; } catch { lastBottleVol = 0; }
 }
 
@@ -77,13 +80,14 @@ function setSyncDot(state) {
 // ── LOG ACTIONS ───────────────────────────────────────────────────────────────
 async function logAction(log) {
   log.id = crypto.randomUUID();
+  log.updated_at = new Date().toISOString(); // Assure la compatibilité Delta Sync
   if (familyId) log.family_id  = familyId;
   else          log.profile_id = activeProfileId;
   allLogs.push(log);
   renderCurrentTab();
   await dbPut(log);
 
-  pendingSyncIds.add(log.id); saveSyncQueues(); // File d'attente
+  pendingSyncIds.add(log.id); saveSyncQueues();
 
   if (supabaseClient && navigator.onLine && familyId) {
     setSyncDot('syncing');
@@ -94,12 +98,13 @@ async function logAction(log) {
 }
 
 async function updateLogAction(log) {
+  log.updated_at = new Date().toISOString();
   const idx = allLogs.findIndex(l => l.id === log.id);
   if (idx >= 0) allLogs[idx] = log;
   renderCurrentTab();
   await dbPut(log);
 
-  pendingSyncIds.add(log.id); saveSyncQueues(); // File d'attente
+  pendingSyncIds.add(log.id); saveSyncQueues();
 
   if (supabaseClient && navigator.onLine && familyId) {
     setSyncDot('syncing');
@@ -115,7 +120,7 @@ async function deleteLogAction(id) {
   await dbDel(id);
 
   pendingDeletes.add(id); 
-  pendingSyncIds.delete(id); // Si on supprime un élément pas encore envoyé, on l'annule
+  pendingSyncIds.delete(id);
   saveSyncQueues();
 
   if (supabaseClient && navigator.onLine && familyId) {
@@ -131,7 +136,6 @@ function startTick(id, fn) { if (ticks[id]) clearInterval(ticks[id]); ticks[id] 
 function stopTick(id)      { clearInterval(ticks[id]); delete ticks[id]; }
 function stopAllTicks()    { Object.keys(ticks).forEach(stopTick); }
 
-/** Auto-stop any running timer except the one identified by `except`. */
 function stopAllActive(except) {
   ['left', 'right'].forEach(side => {
     if (except !== side && breastActive[side]) {
@@ -149,7 +153,7 @@ function stopAllActive(except) {
   }
 }
 
-// ── SESSION (local timer persistence across page reloads) ─────────────────────
+// ── SESSION ───────────────────────────────────────────────────────────────────
 function saveSession() {
   localStorage.setItem('bt_session_'+activeProfileId, JSON.stringify({ breastActive, sleepActive }));
 }
