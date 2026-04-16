@@ -94,46 +94,82 @@ async function loadProfileData() {
 
 // ── TIMERS ────────────────────────────────────────────────────────────────────
 function restoreTimers() {
-  ['left','right'].forEach(s => { if (breastActive[s]) activateBreastTimerLocal(s, breastActive[s].start); });
+  ['left','right'].forEach(s => {
+    const state = breastActive[s];
+    if (!state) return;
+    if (state.paused) {
+      document.getElementById('btn-'+s).classList.add('paused');
+      const pb = document.getElementById('pause-'+s);
+      pb.style.display = '';
+      pb.textContent = '▶ Reprendre';
+      const el = document.getElementById('timer-'+s);
+      if (el) el.textContent = fmtDur(state.accumulated);
+    } else {
+      activateBreastTimerLocal(s, state.start, state.accumulated || 0, state.origin || state.start);
+    }
+  });
   if (sleepActive) activateSleepTimerLocal(sleepActive.start);
 }
 
 function toggleBreast(side) {
   if (breastActive[side]) {
-    const dur = Date.now() - breastActive[side].start;
-    logAction({ type:'feed', side, start:breastActive[side].start, end:Date.now(), duration:dur, timestamp:Date.now() });
+    const s = breastActive[side];
+    const dur = s.accumulated + (s.paused ? 0 : Date.now() - s.start);
+    logAction({ type:'feed', side, start:s.origin, end:Date.now(), duration:dur, timestamp:Date.now() });
     stopBreastTimerLocal(side);
     setRemoteTimer('feed', side, null);
     showToast(`Tétée ${side==='left'?'gauche':'droite'} enregistrée`);
   } else {
     stopAllActive(side);
     const start = Date.now();
-    activateBreastTimerLocal(side, start);
+    activateBreastTimerLocal(side, start, 0, start);
     setRemoteTimer('feed', side, start);
   }
 }
 
-function activateBreastTimerLocal(side, start) {
-  breastActive[side] = { start };
+function activateBreastTimerLocal(side, start, accumulated = 0, origin = null) {
+  breastActive[side] = { start, accumulated, origin: origin || start };
   document.getElementById('btn-'+side).classList.add('running');
+  document.getElementById('btn-'+side).classList.remove('paused');
+  const pb = document.getElementById('pause-'+side);
+  pb.style.display = '';
+  pb.textContent = '⏸ Pause';
   startTick('b-'+side, () => {
     const el = document.getElementById('timer-'+side);
-    if (el) el.textContent = fmtDur(Date.now() - start);
+    if (el) el.textContent = fmtDur(accumulated + Date.now() - start);
   });
   saveSession();
 }
 
 function stopBreastTimerLocal(side) {
   breastActive[side] = null;
-  document.getElementById('btn-'+side).classList.remove('running');
+  document.getElementById('btn-'+side).classList.remove('running', 'paused');
+  document.getElementById('pause-'+side).style.display = 'none';
   stopTick('b-'+side);
   const el = document.getElementById('timer-'+side);
   if (el) el.textContent = '00:00';
   saveSession();
-  // Re-render so history and "last feed" counter reflect the cleared timer state.
-  // Covers local stops (race condition with logAction) and remote stops from the
-  // active_timers realtime channel (which doesn't go through logAction).
   renderCurrentTab();
+}
+
+function togglePauseBreast(side) {
+  const s = breastActive[side];
+  if (!s) return;
+  if (s.paused) {
+    // Resume: restart the tick from now, keeping accumulated time
+    activateBreastTimerLocal(side, Date.now(), s.accumulated, s.origin);
+  } else {
+    // Pause: freeze the timer
+    const accumulated = s.accumulated + Date.now() - s.start;
+    stopTick('b-'+side);
+    breastActive[side] = { start: null, accumulated, paused: true, origin: s.origin };
+    document.getElementById('btn-'+side).classList.remove('running');
+    document.getElementById('btn-'+side).classList.add('paused');
+    const el = document.getElementById('timer-'+side);
+    if (el) el.textContent = fmtDur(accumulated);
+    document.getElementById('pause-'+side).textContent = '▶ Reprendre';
+    saveSession();
+  }
 }
 
 function toggleSleep() {
@@ -496,8 +532,7 @@ function deleteEntry() {
 // ── VISIBILITY CHANGE ─────────────────────────────────────────────────────────
 document.addEventListener('visibilitychange', () => {
   if (!document.hidden) {
-    ['left','right'].forEach(s => { if (breastActive[s]) activateBreastTimerLocal(s, breastActive[s].start); });
-    if (sleepActive) activateSleepTimerLocal(sleepActive.start);
+    restoreTimers();
     if (currentTab === 'feed')   startLastFeedTick();
     if (currentTab === 'bottle') startLastBottleTick();
     

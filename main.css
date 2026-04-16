@@ -120,6 +120,17 @@ body{
 .breast-btn.right .b-timer{color:var(--blue)}
 .status-dot{width:7px;height:7px;border-radius:50%;background:#ddd;position:absolute;top:10px;right:10px}
 .breast-btn.running .status-dot{background:#4caf50}
+.breast-btn.paused.left{background:var(--amber-light)}
+.breast-btn.paused.right{background:var(--amber-light)}
+.breast-btn.paused .status-dot{background:var(--amber)}
+.breast-btn.paused .b-timer{color:var(--amber)}
+.pause-breast-btn{
+  width:100%;border:none;border-radius:var(--radius-sm);padding:8px;margin-top:5px;cursor:pointer;
+  font-size:12px;font-weight:600;transition:opacity .15s;
+}
+.pause-breast-btn.left{background:var(--pink-light);color:var(--pink)}
+.pause-breast-btn.right{background:var(--blue-light);color:var(--blue)}
+.pause-breast-btn:active{opacity:.7}
 .last-feed{font-size:11px;color:var(--text-muted);text-align:center;margin-top:3px;min-height:15px}
 .last-feed-global{
   font-size:12px;color:var(--text-muted);text-align:center;

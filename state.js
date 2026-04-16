@@ -139,8 +139,9 @@ function stopAllTicks()    { Object.keys(ticks).forEach(stopTick); }
 function stopAllActive(except) {
   ['left', 'right'].forEach(side => {
     if (except !== side && breastActive[side]) {
-      const dur = Date.now() - breastActive[side].start;
-      logAction({ type:'feed', side, start:breastActive[side].start, end:Date.now(), duration:dur, timestamp:Date.now() });
+      const s = breastActive[side];
+      const dur = s.accumulated + (s.paused ? 0 : Date.now() - s.start);
+      logAction({ type:'feed', side, start:s.origin, end:Date.now(), duration:dur, timestamp:Date.now() });
       stopBreastTimerLocal(side);
       setRemoteTimer('feed', side, null);
     }

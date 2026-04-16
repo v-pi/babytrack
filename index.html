@@ -13,7 +13,7 @@
   <script>
     (function(){var t=localStorage.getItem('bt_theme');if(t==='dark')document.documentElement.setAttribute('data-theme','dark');})();
   </script>
-  <link rel="stylesheet" href="main.css?v=50"/>
+  <link rel="stylesheet" href="main.css?v=51"/>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>
@@ -52,6 +52,7 @@
             <div class="b-label">Sein gauche</div>
             <div class="b-timer" id="timer-left">00:00</div>
           </button>
+          <button class="pause-breast-btn left" id="pause-left" onclick="togglePauseBreast('left')" style="display:none">⏸ Pause</button>
           <div class="last-feed" id="last-left"></div>
         </div>
         <div>
@@ -61,6 +62,7 @@
             <div class="b-label">Sein droit</div>
             <div class="b-timer" id="timer-right">00:00</div>
           </button>
+          <button class="pause-breast-btn right" id="pause-right" onclick="togglePauseBreast('right')" style="display:none">⏸ Pause</button>
           <div class="last-feed" id="last-right"></div>
         </div>
       </div>
@@ -283,11 +285,11 @@
 <div class="toast" id="toast"></div>
 
 <!-- ── SCRIPTS (all at root level, versioned) ── -->
-<script src="utils.js?v=50"></script>
-<script src="db.js?v=50"></script>
-<script src="state.js?v=50"></script>
-<script src="render.js?v=50"></script>
-<script src="sync.js?v=50"></script>
-<script src="app.js?v=50"></script>
+<script src="utils.js?v=51"></script>
+<script src="db.js?v=51"></script>
+<script src="state.js?v=51"></script>
+<script src="render.js?v=51"></script>
+<script src="sync.js?v=51"></script>
+<script src="app.js?v=51"></script>
 </body>
 </html>
