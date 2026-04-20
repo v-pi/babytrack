@@ -49,6 +49,7 @@ window.onload = async () => {
 
   loadProfiles();
   updateHeaderProfile();
+  familyId = getActiveProfile().familyId;
 
   // Restore last active tab (survives F5, not shared between tabs)
   const savedTab = sessionStorage.getItem('bt_tab') || 'feed';
@@ -61,6 +62,7 @@ window.onload = async () => {
     const p = getActiveProfile();
     p.familyId = invite;
     saveProfiles();
+	familyId = invite;
     window.history.replaceState({}, document.title, window.location.pathname);
     showToast("Lien d'invitation détecté !");
   }
@@ -69,7 +71,6 @@ window.onload = async () => {
   // Init bottle input from persisted last value
   const bvi = document.getElementById('bottle-vol-input');
   if (bvi) bvi.value = lastBottleVol;
-  familyId = getActiveProfile().familyId;
 
   if (!familyId) {
     document.getElementById('sync-modal').classList.add('open');
