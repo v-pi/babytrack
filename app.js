@@ -487,16 +487,40 @@ function openEdit(id) {
       <input type="number" id="ed-vol" min="0" max="999" step="10" value="${editingLog.volume || 0}" style="font-size:22px;font-weight:700;text-align:center"/>
     </div>`;
   } else {
+    // feed or sleep — for feed, add a side selector
+    const sideSelector = editingLog.type === 'feed' ? `
+    <div class="modal-field"><label>Sein</label>
+      <div style="display:flex;gap:8px;margin-top:4px">
+        ${[['left','👈 Gauche'],['right','Droit 👉']].map(([val, label]) => `
+          <button id="ed-side-${val}" onclick="setEditFeedSide('${val}',this)"
+            style="flex:1;padding:10px 6px;border-radius:10px;font-size:13px;font-weight:600;cursor:pointer;
+                   border:2px solid ${editingLog.side===val?'var(--pink)':'var(--border)'};
+                   background:${editingLog.side===val?'var(--pink-light)':'var(--bg)'}">
+            ${label}
+          </button>`).join('')}
+      </div>
+    </div>` : '';
     b.innerHTML = `<div class="modal-row">
       <div class="modal-field"><label>Début Date</label><input type="date" id="es-d" value="${fmtYMD(editingLog.start)}"/></div>
       <div class="modal-field"><label>Début Heure</label><input type="time" id="es-t" value="${fmtHM(editingLog.start)}"/></div>
     </div><div class="modal-row">
       <div class="modal-field"><label>Fin Date</label><input type="date" id="ee-d" value="${fmtYMD(editingLog.end)}"/></div>
       <div class="modal-field"><label>Fin Heure</label><input type="time" id="ee-t" value="${fmtHM(editingLog.end)}"/></div>
-    </div>`;
+    </div>${sideSelector}`;
   }
   document.getElementById('modal-overlay').classList.add('open');
 }
+function setEditFeedSide(side, btn) {
+  editingLog.side = side;
+  ['left', 'right'].forEach(s => {
+    const b = document.getElementById('ed-side-' + s);
+    if (b) {
+      b.style.borderColor = s === side ? 'var(--pink)' : 'var(--border)';
+      b.style.background  = s === side ? 'var(--pink-light)' : 'var(--bg)';
+    }
+  });
+}
+
 function setEditDiaperType(type, btn) {
   editingLog.diaperType = type;
   ['wet','dirty','mixed'].forEach(t => {
