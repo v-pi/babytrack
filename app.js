@@ -156,10 +156,16 @@ function togglePauseBreast(side) {
   const s = breastActive[side];
   if (!s) return;
   if (s.paused) {
-    // Resume: restart the tick from now, keeping accumulated time
-    activateBreastTimerLocal(side, Date.now(), s.accumulated, s.origin);
+    // ── Resume ──────────────────────────────────────────────────────────────
+    // start_time on the remote = timestamp of this resume (current segment).
+    // accumulated = total elapsed before this segment.
+    const resumeStart = Date.now();
+    activateBreastTimerLocal(side, resumeStart, s.accumulated, s.origin);
+    // Notify other browsers: timer is running again from resumeStart,
+    // with s.accumulated already banked.
+    setRemoteTimer('feed', side, resumeStart, false, s.accumulated);
   } else {
-    // Pause: freeze the timer
+    // ── Pause ────────────────────────────────────────────────────────────────
     const accumulated = s.accumulated + Date.now() - s.start;
     stopTick('b-'+side);
     breastActive[side] = { start: null, accumulated, paused: true, origin: s.origin };
@@ -169,6 +175,9 @@ function togglePauseBreast(side) {
     if (el) el.textContent = fmtDur(accumulated);
     document.getElementById('pause-'+side).textContent = '▶ Reprendre';
     saveSession();
+    // Notify other browsers: timer is paused with `accumulated` ms banked.
+    // start_time keeps the origin so remote can still show when the feed started.
+    setRemoteTimer('feed', side, s.origin, true, accumulated);
   }
 }
 

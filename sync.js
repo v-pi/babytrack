@@ -143,6 +143,45 @@ async function syncWithRemote() {
 }
 
 // ── TIMER SYNC ───────────────────────────────────────────────────────────────
+
+/**
+ * Apply a remote active_timers row to a breast timer, handling both running
+ * and paused states. Called from syncTimersFromRemote() and the realtime handler.
+ * Safe to call even if the local timer is already in the target state.
+ */
+function applyRemoteBreastTimer(side, row) {
+  if (row.paused) {
+    // Remote timer is paused.
+    // Only update if local state differs (avoids unnecessary DOM churn).
+    const local = breastActive[side];
+    if (local && local.paused && local.accumulated === (row.accumulated || 0)) return;
+
+    stopTick('b-' + side);
+    breastActive[side] = {
+      start:       null,
+      accumulated: row.accumulated || 0,
+      paused:      true,
+      origin:      toMs(row.start_time),
+    };
+    document.getElementById('btn-' + side).classList.remove('running');
+    document.getElementById('btn-' + side).classList.add('paused');
+    const pb = document.getElementById('pause-' + side);
+    pb.style.display = '';
+    pb.textContent   = '▶ Reprendre';
+    const el = document.getElementById('timer-' + side);
+    if (el) el.textContent = fmtDur(row.accumulated || 0);
+    saveSession();
+  } else {
+    // Remote timer is running.
+    // start_time here is the timestamp of the last resume (or initial start).
+    // accumulated is the total time from previous segments before that resume.
+    const local = breastActive[side];
+    if (local && !local.paused) return; // already running locally — don't reset tick
+
+    activateBreastTimerLocal(side, toMs(row.start_time), row.accumulated || 0, toMs(row.start_time));
+  }
+}
+
 async function pushPendingTimers() {
   if (!supabaseClient || !navigator.onLine || !familyId) return;
   for (const key of Object.keys(pendingTimers)) {
@@ -151,7 +190,12 @@ async function pushPendingTimers() {
     let err;
     if (pt.startTime !== null) {
       const { error } = await supabaseClient.from('active_timers').upsert({
-        family_id: familyId, type: pt.type, side: dbSide, start_time: pt.startTime
+        family_id:   familyId,
+        type:        pt.type,
+        side:        dbSide,
+        start_time:  pt.startTime,
+        paused:      pt.paused      || false,  // ← NEW
+        accumulated: pt.accumulated || 0,       // ← NEW
       });
       err = error;
     } else {
@@ -166,11 +210,21 @@ async function pushPendingTimers() {
   }
 }
 
-async function setRemoteTimer(type, side, startTime) {
+/**
+ * Queue a timer update for remote sync.
+ *
+ * @param {string}       type        - 'feed' | 'sleep'
+ * @param {string|null}  side        - 'left' | 'right' | null
+ * @param {number|null}  startTime   - ms timestamp of current segment start,
+ *                                     or null to delete the remote timer
+ * @param {boolean}      [paused]    - true when the timer is paused
+ * @param {number}       [accumulated] - ms already elapsed before current segment
+ */
+async function setRemoteTimer(type, side, startTime, paused = false, accumulated = 0) {
   const key = type + '_' + (side || 'none');
-  pendingTimers[key] = { type, side, startTime };
+  pendingTimers[key] = { type, side, startTime, paused, accumulated };
   saveSyncQueues();
-  pushPendingTimers(); // Lance la synchro en fond, ou garde en attente si hors ligne
+  pushPendingTimers(); // Launches sync in background, or keeps queued if offline
 }
 
 async function syncTimersFromRemote() {
@@ -179,19 +233,22 @@ async function syncTimersFromRemote() {
     .from('active_timers').select('*').eq('family_id', familyId);
   if (!timers) return;
 
-  // Sync Allaitement
+  // ── Breast timers ──────────────────────────────────────────────────────────
   ['left', 'right'].forEach(side => {
-    if (pendingTimers['feed_' + side]) return; // On ignore si un chrono local est en attente
-    const a = timers.find(t => t.type === 'feed' && t.side === side);
-    if (a && !breastActive[side]) activateBreastTimerLocal(side, toMs(a.start_time));
-    else if (!a && breastActive[side]) stopBreastTimerLocal(side);
+    if (pendingTimers['feed_' + side]) return; // Local change in-flight — skip
+    const row = timers.find(t => t.type === 'feed' && t.side === side);
+    if (row) {
+      applyRemoteBreastTimer(side, row);
+    } else if (breastActive[side]) {
+      stopBreastTimerLocal(side);
+    }
   });
 
-  // Sync Sommeil
+  // ── Sleep timer ────────────────────────────────────────────────────────────
   if (!pendingTimers['sleep_none']) {
     const sa = timers.find(t => t.type === 'sleep' && (t.side === 'none' || !t.side));
-    if (sa && !sleepActive)       activateSleepTimerLocal(toMs(sa.start_time));
-    else if (!sa && sleepActive)  stopSleepTimerLocal();
+    if (sa && !sleepActive)      activateSleepTimerLocal(toMs(sa.start_time));
+    else if (!sa && sleepActive) stopSleepTimerLocal();
   }
 }
 
@@ -239,12 +296,21 @@ function setupRealtime() {
       filter: `family_id=eq.${familyId}`
     }, ({ eventType, new: n, old: o }) => {
       if (eventType === 'INSERT' || eventType === 'UPDATE') {
-        if (!n || pendingTimers[n.type + '_' + n.side]) return; // Ignorer si local override
-        if (n.type === 'feed') activateBreastTimerLocal(n.side, toMs(n.start_time));
-        else                   activateSleepTimerLocal(toMs(n.start_time));
+        if (!n) return;
+        const key = n.type + '_' + (n.side || 'none');
+        if (pendingTimers[key]) return; // Local change in-flight — ignore echo
+
+        if (n.type === 'feed') {
+          applyRemoteBreastTimer(n.side, n); // handles both paused & running
+        } else {
+          // Sleep timer — no pause support yet, simple start
+          activateSleepTimerLocal(toMs(n.start_time));
+        }
       } else if (eventType === 'DELETE') {
-        if (!o || pendingTimers[o.type + '_' + o.side]) return;
-        if (o.side === 'none' || o.type === 'sleep') stopSleepTimerLocal();
+        if (!o) return;
+        const key = o.type + '_' + (o.side || 'none');
+        if (pendingTimers[key]) return;
+        if (o.type === 'sleep' || o.side === 'none') stopSleepTimerLocal();
         else stopBreastTimerLocal(o.side);
       }
     })
