@@ -5,18 +5,18 @@
 -- 1. EXTENSIONS
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
--- 2. TABLES (incluant toutes les migrations : baby_name, baby_emoji, volume)
+-- 2. TABLES
 CREATE TABLE IF NOT EXISTS public.families (
   id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
   created_at timestamptz DEFAULT now(),
-  baby_name text,
-  baby_emoji text
+  baby_name text CONSTRAINT baby_name_length CHECK (length(baby_name) < 100),
+  baby_emoji text CONSTRAINT baby_emoji_length CHECK (length(baby_emoji) < 20)
 );
 
 CREATE TABLE IF NOT EXISTS public.logs (
   id uuid PRIMARY KEY,
   family_id uuid REFERENCES public.families(id) ON DELETE CASCADE,
-  type text NOT NULL,
+  type text NOT NULL CONSTRAINT type_length CHECK (length(type) < 50),
   side text,
   "start" bigint,
   "end" bigint,
@@ -32,6 +32,8 @@ CREATE TABLE IF NOT EXISTS public.active_timers (
   type text NOT NULL,
   side text,
   start_time bigint NOT NULL,
+  paused boolean DEFAULT false,
+  accumulated bigint DEFAULT 0,
   PRIMARY KEY (family_id, type, side)
 );
 
@@ -68,13 +70,3 @@ CREATE POLICY "Timers policy" ON public.active_timers
   ) WITH CHECK (
     family_id::text = current_setting('request.headers', true)::json->>'x-family-id'
   );
-  
-  
-ALTER TABLE public.families ADD CONSTRAINT baby_name_length CHECK (length(baby_name) < 100);
-ALTER TABLE public.families ADD CONSTRAINT baby_emoji_length CHECK (length(baby_emoji) < 20);
-ALTER TABLE public.logs ADD CONSTRAINT type_length CHECK (length(type) < 50);
-
-
-ALTER TABLE public.active_timers
-  ADD COLUMN IF NOT EXISTS paused      boolean DEFAULT false,
-  ADD COLUMN IF NOT EXISTS accumulated bigint  DEFAULT 0;
