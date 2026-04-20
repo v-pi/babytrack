@@ -68,3 +68,8 @@ CREATE POLICY "Timers policy" ON public.active_timers
   ) WITH CHECK (
     family_id::text = current_setting('request.headers', true)::json->>'x-family-id'
   );
+  
+  
+ALTER TABLE public.families ADD CONSTRAINT baby_name_length CHECK (length(baby_name) < 100);
+ALTER TABLE public.families ADD CONSTRAINT baby_emoji_length CHECK (length(baby_emoji) < 20);
+ALTER TABLE public.logs ADD CONSTRAINT type_length CHECK (length(type) < 50);
