@@ -70,3 +70,39 @@ CREATE POLICY "Timers policy" ON public.active_timers
   ) WITH CHECK (
     family_id::text = current_setting('request.headers', true)::json->>'x-family-id'
   );
+  
+  
+ 
+CREATE TABLE IF NOT EXISTS public.invite_codes (
+  code       text        PRIMARY KEY,                          -- 7-char e.g. "MJKNPQ4"
+  family_id  uuid        NOT NULL REFERENCES public.families(id) ON DELETE CASCADE,
+  created_at timestamptz DEFAULT now(),
+  expires_at timestamptz NOT NULL
+);
+
+-- Index for the SELECT lookup (code + expiry check)
+CREATE INDEX IF NOT EXISTS idx_invite_codes_lookup
+  ON public.invite_codes (code, expires_at);
+
+-- RLS
+ALTER TABLE public.invite_codes ENABLE ROW LEVEL SECURITY;
+
+-- INSERT: only for your own family
+CREATE POLICY "invite_codes_insert" ON public.invite_codes
+  FOR INSERT WITH CHECK (
+    family_id::text = current_setting('request.headers', true)::json->>'x-family-id'
+  );
+
+-- SELECT: only if caller sends the exact code as x-invite-code header + not expired.
+-- Without this header a full table scan returns 0 rows — no enumeration possible.
+CREATE POLICY "invite_codes_select" ON public.invite_codes
+  FOR SELECT USING (
+    code = current_setting('request.headers', true)::json->>'x-invite-code'
+    AND expires_at > now()
+  );
+
+-- Rate-limit invite code creation the same way as logs/timers.
+-- DELETE is already exempt from the ban logic (see 3_fix_delete_trigger.sql).
+CREATE TRIGGER shadow_ban_invite_codes_trigger
+BEFORE INSERT OR UPDATE OR DELETE ON public.invite_codes
+FOR EACH ROW EXECUTE FUNCTION public.check_and_apply_shadow_ban();

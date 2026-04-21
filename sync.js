@@ -14,6 +14,10 @@
 const SUPABASE_URL = 'https://vcufbfvqtfgrcjjxbhee.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_EUJrpx_XbBds3EPk1rCtmQ_3qTWTaOX';
 
+// 31-char alphabet: uppercase letters minus I, L, O + digits minus 0, 1.
+// Avoids visually ambiguous characters when reading a code aloud or typing it.
+const INVITE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+
 let supabaseClient = null;
 let _realtimeChannels = [];
 
@@ -194,25 +198,25 @@ async function pushPendingTimers() {
         type:        pt.type,
         side:        dbSide,
         start_time:  pt.startTime,
-        paused:      pt.paused      || false,  // ← NEW
-        accumulated: pt.accumulated || 0,       // ← NEW
+        paused:      pt.paused      || false,
+        accumulated: pt.accumulated || 0,
       });
       err = error;
     } else {
       const { error } = await supabaseClient.from('active_timers')
-        .delete().eq('family_id', familyId).eq('type', pt.type).eq('side', dbSide);
+        .delete()
+        .eq('family_id', familyId)
+        .eq('type', pt.type)
+        .eq('side', dbSide);
       err = error;
     }
-    if (!err) {
-      delete pendingTimers[key];
-      saveSyncQueues();
-    }
+    if (!err) delete pendingTimers[key];
   }
+  saveSyncQueues();
 }
 
 /**
- * Queue a timer update for remote sync.
- *
+ * Persist a timer state to the remote `active_timers` table.
  * @param {string}       type        - 'feed' | 'sleep'
  * @param {string|null}  side        - 'left' | 'right' | null
  * @param {number|null}  startTime   - ms timestamp of current segment start,
@@ -381,15 +385,92 @@ async function createFamily() {
   showToast('Famille créée !');
 }
 
+/**
+ * Generate a short invite code and store it in `invite_codes`.
+ * Returns { raw, display, expiresAt } on success, null on failure.
+ *
+ * raw     — 7-char string stored in DB and embedded in URLs  e.g. "MJKNPQ4"
+ * display — formatted for human reading                      e.g. "MJK-NPQ4"
+ * expiresAt — ISO string, now + 10 minutes
+ */
+async function createInviteCode() {
+  if (!supabaseClient || !familyId) return null;
+
+  // Generate 7 chars from INVITE_ALPHABET using rejection sampling to
+  // avoid modulo bias (31 doesn't divide 256 evenly).
+  const raw = (() => {
+    const len = INVITE_ALPHABET.length; // 31
+    const threshold = 256 - (256 % len); // 248 — values ≥ 248 are rejected
+    let result = '';
+    while (result.length < 7) {
+      const arr = new Uint8Array(14); // over-generate to minimise rounds
+      crypto.getRandomValues(arr);
+      for (const b of arr) {
+        if (b < threshold) result += INVITE_ALPHABET[b % len];
+        if (result.length === 7) break;
+      }
+    }
+    return result;
+  })();
+
+  const display   = raw.slice(0, 3) + '-' + raw.slice(3); // "XXX-XXXX"
+  const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+
+  const { error } = await supabaseClient.from('invite_codes').insert({
+    code:      raw,
+    family_id: familyId,
+    expires_at: expiresAt
+  });
+
+  if (error) {
+    console.error('[BabyTrack] createInviteCode error:', error);
+    return null;
+  }
+
+  return { raw, display, expiresAt };
+}
+
+/**
+ * Resolve a short invite code to a family_id and join that family.
+ * Uses x-invite-code header so the RLS SELECT policy only returns the
+ * matching row — no enumeration possible without the exact code.
+ */
 async function joinFamily() {
-  const code = document.getElementById('invite-code').value.trim();
-  if (!code || code.length < 20) { showToast('Code invalide'); return; }
+  const raw = document.getElementById('invite-code').value
+    .trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+
+  if (raw.length !== 7) { showToast('Code invalide — 7 caractères attendus'); return; }
+
+  setSyncDot('syncing');
+  await ensureAnonAuth();
+
+  // Temp client carrying the invite code as a header.
+  // The RLS SELECT policy on invite_codes matches `code = x-invite-code header`,
+  // so this query returns exactly one row (or zero if wrong/expired).
+  const tmp = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
+    global: { headers: { 'x-invite-code': raw } }
+  });
+
+  const { data, error } = await tmp
+    .from('invite_codes')
+    .select('family_id')
+    .eq('code', raw)
+    .maybeSingle();
+
+  if (error || !data) {
+    setSyncDot('error');
+    showToast('Code invalide ou expiré');
+    return;
+  }
+
   const p = getActiveProfile();
-  p.familyId = code;
+  p.familyId = data.family_id;
   saveProfiles();
-  familyId = code;
+  familyId = data.family_id;
+
   document.getElementById('sync-modal').classList.remove('open');
   document.getElementById('btn-share').style.display = 'block';
+  setSyncDot('');
   initSupabase();
   showToast('Famille rejointe, synchronisation…');
 }

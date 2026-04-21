@@ -55,16 +55,17 @@ window.onload = async () => {
   const savedTab = sessionStorage.getItem('bt_tab') || 'feed';
   switchTab(savedTab, true);   // true = silent, skip early timeline render
 
-  // Handle invite link (?invite=<familyId>)
+  // ── Handle invite link (?invite=<shortcode>) ──────────────────────────────
+  // The invite code is a 7-char alphanumeric string (e.g. "MJKNPQ4"), NOT the
+  // raw family UUID. It is resolved server-side so the UUID is never in the URL.
   const params = new URLSearchParams(window.location.search);
-  const invite = params.get('invite');
-  if (invite && invite.length > 20) {
-    const p = getActiveProfile();
-    p.familyId = invite;
-    saveProfiles();
-	familyId = invite;
+  const inviteParam = params.get('invite');
+  const hasInviteCode = inviteParam && /^[A-Z0-9]{7}$/i.test(inviteParam);
+
+  if (hasInviteCode) {
+    // Pre-fill the join input so joinFamily() can read it, then clean the URL.
+    document.getElementById('invite-code').value = inviteParam.toUpperCase();
     window.history.replaceState({}, document.title, window.location.pathname);
-    showToast("Lien d'invitation détecté !");
   }
 
   await loadProfileData();
@@ -72,7 +73,13 @@ window.onload = async () => {
   const bvi = document.getElementById('bottle-vol-input');
   if (bvi) bvi.value = lastBottleVol;
 
-  if (!familyId) {
+  if (hasInviteCode && !familyId) {
+    // Auto-join from a scanned QR code or shared link.
+    // joinFamily() handles setSyncDot, modal close, and initSupabase on success.
+    await joinFamily();
+    // If join failed (expired/invalid code), fall back to the sync modal.
+    if (!familyId) document.getElementById('sync-modal').classList.add('open');
+  } else if (!familyId) {
     document.getElementById('sync-modal').classList.add('open');
   } else {
     document.getElementById('btn-share').style.display = 'block';
@@ -444,18 +451,79 @@ async function resetCurrentProfile() {
 }
 
 // ── SHARE MODAL ───────────────────────────────────────────────────────────────
-function openShareModal() {
-  const url = window.location.origin + window.location.pathname + '?invite=' + familyId;
-  document.getElementById('qr-code').src = `https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(url)}`;
-  document.getElementById('share-link-input').value = url;
+let _shareCountdownInterval = null;
+let _currentShareCode       = null; // { raw, display, expiresAt }
+
+async function openShareModal() {
+  // Reset display to loading state before opening
+  document.getElementById('share-code-display').textContent = '···-····';
+  document.getElementById('share-countdown').textContent    = '--:--';
+  document.getElementById('share-countdown').style.color   = '';
+  document.getElementById('qr-code').src = '';
   document.getElementById('share-modal').classList.add('open');
+  await _generateAndDisplayCode();
 }
+
+async function _generateAndDisplayCode() {
+  // Clear any running countdown before starting a new one
+  if (_shareCountdownInterval) { clearInterval(_shareCountdownInterval); _shareCountdownInterval = null; }
+
+  const result = await createInviteCode();
+
+  if (!result) {
+    document.getElementById('share-countdown').textContent  = 'Erreur ⚠️';
+    document.getElementById('share-countdown').style.color = 'var(--red, #e05)';
+    showToast('Impossible de créer un code');
+    return;
+  }
+
+  _currentShareCode = result;
+
+  // Show the human-readable code
+  document.getElementById('share-code-display').textContent = result.display;
+
+  // QR code embeds the short code (not the UUID) so the URL never leaks the secret
+  const url = window.location.origin + window.location.pathname + '?invite=' + result.raw;
+  document.getElementById('qr-code').src =
+    `https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(url)}`;
+
+  // Live countdown
+  const expiresAt = new Date(result.expiresAt).getTime();
+  const tick = () => {
+    const remaining = expiresAt - Date.now();
+    if (remaining <= 0) {
+      clearInterval(_shareCountdownInterval);
+      _shareCountdownInterval = null;
+      document.getElementById('share-countdown').textContent  = 'Expiré — génère un nouveau code';
+      document.getElementById('share-countdown').style.color = 'var(--red, #e05)';
+      document.getElementById('share-code-display').textContent = '···-····';
+      return;
+    }
+    const m = Math.floor(remaining / 60000);
+    const s = Math.floor((remaining % 60000) / 1000);
+    document.getElementById('share-countdown').textContent = `${m}:${String(s).padStart(2, '0')}`;
+  };
+  tick(); // immediate first render
+  _shareCountdownInterval = setInterval(tick, 1000);
+}
+
+async function refreshInviteCode() {
+  document.getElementById('share-code-display').textContent = '···-····';
+  document.getElementById('share-countdown').textContent    = '--:--';
+  document.getElementById('share-countdown').style.color   = '';
+  await _generateAndDisplayCode();
+}
+
 function closeShareModal(e) {
   if (e && e.target !== document.getElementById('share-modal')) return;
+  if (_shareCountdownInterval) { clearInterval(_shareCountdownInterval); _shareCountdownInterval = null; }
   document.getElementById('share-modal').classList.remove('open');
 }
+
 function copyShareLink() {
-  navigator.clipboard.writeText(document.getElementById('share-link-input').value);
+  if (!_currentShareCode) return;
+  const url = window.location.origin + window.location.pathname + '?invite=' + _currentShareCode.raw;
+  navigator.clipboard.writeText(url);
   showToast('Lien copié !');
 }
 

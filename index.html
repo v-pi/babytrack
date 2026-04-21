@@ -13,7 +13,7 @@
   <script>
     (function(){var t=localStorage.getItem('bt_theme');if(t==='dark')document.documentElement.setAttribute('data-theme','dark');})();
   </script>
-  <link rel="stylesheet" href="main.css?v=56"/>
+  <link rel="stylesheet" href="main.css?v=57"/>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>
@@ -261,7 +261,12 @@
     <div style="display:flex;flex-direction:column;gap:12px;">
       <button class="btn btn-save" onclick="createFamily()">Créer ma famille</button>
       <div style="text-align:center;color:var(--text-muted);font-size:12px;margin:2px 0">— ou —</div>
-      <input type="text" id="invite-code" placeholder="Coller un code d'invitation…" style="width:100%;border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px;font-size:14px;text-align:center;"/>
+      <input type="text" id="invite-code"
+        placeholder="Ex : MJK-9P4"
+        maxlength="8"
+        autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false"
+        oninput="this.value=this.value.toUpperCase().replace(/[^A-Z0-9-]/g,'').slice(0,8)"
+        style="width:100%;border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px;font-size:20px;font-weight:700;text-align:center;letter-spacing:3px;font-family:monospace;box-sizing:border-box"/>
       <button class="btn btn-cancel" style="border:1px solid var(--border)" onclick="joinFamily()">Rejoindre avec le code</button>
       <button class="btn btn-cancel" style="opacity:.6;font-size:12px" onclick="skipSync()">Continuer sans synchronisation</button>
     </div>
@@ -272,24 +277,41 @@
 <div class="modal-overlay" id="share-modal" onclick="closeShareModal(event)">
   <div class="modal center" style="width:90%">
     <div class="modal-title" style="text-align:center;">Partager l'accès</div>
-    <p style="font-size:13px;color:var(--text-muted);text-align:center;margin-bottom:20px;">Scannez ce QR Code avec l'autre téléphone ou partagez le lien.</p>
-    <img id="qr-code" src="" alt="QR Code" style="width:180px;height:180px;margin:0 auto 20px;display:block;border-radius:12px;border:1px solid var(--border);padding:10px;"/>
-    <div style="display:flex;gap:10px;">
-      <input type="text" id="share-link-input" readonly style="flex:1;border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px;font-size:12px;background:var(--bg);color:var(--text-muted)"/>
-      <button class="btn btn-save" style="flex:none;padding:10px 14px;font-size:12px" onclick="copyShareLink()">Copier</button>
+    <p style="font-size:13px;color:var(--text-muted);text-align:center;margin-bottom:6px;">Donnez ce code à l'autre parent. Valable :</p>
+
+    <!-- Countdown -->
+    <div id="share-countdown"
+         style="text-align:center;font-size:26px;font-weight:700;color:var(--pink);margin-bottom:10px;font-variant-numeric:tabular-nums;letter-spacing:1px">
+      --:--
     </div>
-    <button class="btn btn-cancel" style="margin-top:14px;width:100%" onclick="closeShareModal()">Fermer</button>
+
+    <!-- Short code — big, monospace, easy to read aloud -->
+    <div id="share-code-display"
+         style="text-align:center;font-size:40px;font-weight:800;letter-spacing:6px;margin-bottom:16px;font-family:monospace;color:var(--text)">
+      ···-····
+    </div>
+
+    <!-- QR code for scan-to-join -->
+    <img id="qr-code" src="" alt="QR Code"
+         style="width:160px;height:160px;margin:0 auto 18px;display:block;border-radius:12px;border:1px solid var(--border);padding:10px;"/>
+
+    <!-- Actions -->
+    <div style="display:flex;gap:10px;margin-bottom:10px">
+      <button class="btn btn-save"   style="flex:1;font-size:13px"                       onclick="copyShareLink()">📋 Copier le lien</button>
+      <button class="btn btn-cancel" style="flex:none;padding:13px 14px;font-size:13px;white-space:nowrap" onclick="refreshInviteCode()">🔄 Nouveau</button>
+    </div>
+    <button class="btn btn-cancel" style="width:100%" onclick="closeShareModal()">Fermer</button>
   </div>
 </div>
 
 <div class="toast" id="toast"></div>
 
 <!-- ── SCRIPTS (all at root level, versioned) ── -->
-<script src="utils.js?v=56"></script>
-<script src="db.js?v=56"></script>
-<script src="state.js?v=56"></script>
-<script src="render.js?v=56"></script>
-<script src="sync.js?v=56"></script>
-<script src="app.js?v=56"></script>
+<script src="utils.js?v=57"></script>
+<script src="db.js?v=57"></script>
+<script src="state.js?v=57"></script>
+<script src="render.js?v=57"></script>
+<script src="sync.js?v=57"></script>
+<script src="app.js?v=57"></script>
 </body>
 </html>
