@@ -141,6 +141,7 @@ function activateBreastTimerLocal(side, start, accumulated = 0, origin = null) {
   const pb = document.getElementById('pause-'+side);
   pb.classList.add('shown');
   pb.textContent = '⏸ Pause';
+  startTick('b-'+side, () => {
     const el = document.getElementById('timer-'+side);
     if (el) el.textContent = fmtDur(accumulated + Date.now() - start);
   });
