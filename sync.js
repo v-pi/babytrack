@@ -158,18 +158,24 @@ async function syncWithRemote() {
  * Safe to call even if the local timer is already in the target state.
  */
 function applyRemoteBreastTimer(side, row) {
+  // Supabase Realtime sends bigint columns as strings → always coerce to number.
+  // "0" is truthy, so  `row.accumulated || 0`  would keep the string "0".
+  // Number("0") = 0, Number("12345") = 12345, Number(0) = 0 — all correct.
+  const acc      = Number(row.accumulated) || 0;
+  const startMs  = toMs(row.start_time);
+
   if (row.paused) {
     // Remote timer is paused.
     // Only update if local state differs (avoids unnecessary DOM churn).
     const local = breastActive[side];
-    if (local && local.paused && local.accumulated === (row.accumulated || 0)) return;
+    if (local && local.paused && local.accumulated === acc) return;
 
     stopTick('b-' + side);
     breastActive[side] = {
       start:       null,
-      accumulated: row.accumulated || 0,
+      accumulated: acc,
       paused:      true,
-      origin:      toMs(row.start_time),
+      origin:      startMs,
     };
     document.getElementById('btn-' + side).classList.remove('running');
     document.getElementById('btn-' + side).classList.add('paused');
@@ -177,7 +183,7 @@ function applyRemoteBreastTimer(side, row) {
     pb.classList.add('shown');
     pb.textContent   = '▶ Reprendre';
     const el = document.getElementById('timer-' + side);
-    if (el) el.textContent = fmtDur(row.accumulated || 0);
+    if (el) el.textContent = fmtDur(acc);
     saveSession();
   } else {
     // Remote timer is running.
@@ -186,7 +192,7 @@ function applyRemoteBreastTimer(side, row) {
     const local = breastActive[side];
     if (local && !local.paused) return; // already running locally — don't reset tick
 
-    activateBreastTimerLocal(side, toMs(row.start_time), row.accumulated || 0, toMs(row.start_time));
+    activateBreastTimerLocal(side, startMs, acc, startMs);
   }
 }
 
@@ -487,11 +493,21 @@ function skipSync() {
 }
 
 // ── HELPERS ──────────────────────────────────────────────────────────────────
-/** Normalise a Supabase timestamp (ISO string or ms number) to ms. */
+/**
+ * Normalise a Supabase value to milliseconds.
+ *
+ * Supabase REST API  → bigint columns arrive as JS numbers  (e.g. 1745123456789)
+ * Supabase Realtime  → bigint columns arrive as JSON strings (e.g. "1745123456789")
+ *
+ * new Date("1745123456789") returns Invalid Date in most browsers, so we must
+ * detect numeric strings and convert them via Number() first.
+ */
 function toMs(v) {
-  if (!v) return Date.now();
+  if (v === null || v === undefined || v === '') return Date.now();
   if (typeof v === 'number') return v;
-  return new Date(v).getTime();
+  const n = Number(v);              // "1745123456789" → 1745123456789
+  if (!isNaN(n) && n > 0) return n;
+  return new Date(v).getTime();     // ISO strings e.g. "2025-04-22T10:00:00Z"
 }
 
 // ── AUTO-INIT ANON AUTH ON PAGE LOAD ─────────────────────────────────────────

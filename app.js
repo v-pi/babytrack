@@ -110,6 +110,7 @@ function restoreTimers() {
       const pb = document.getElementById('pause-'+s);
       pb.classList.add('shown');
       pb.textContent = '▶ Reprendre';
+      const el = document.getElementById('timer-'+s); // Fix: was missing, causing silent error
       if (el) el.textContent = fmtDur(state.accumulated);
     } else {
       activateBreastTimerLocal(s, state.start, state.accumulated || 0, state.origin || state.start);
