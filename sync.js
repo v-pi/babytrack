@@ -46,17 +46,15 @@ async function ensureAnonAuth() {
 
 // ── SUPABASE CLIENT INIT ──────────────────────────────────────────────────────
 async function initSupabase() {
-  // Guarantee a session exists before creating the main client.
-  // If the user is offline this is a fast no-op.
   await ensureAnonAuth();
-
-  supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
-    global: {
-      // x-family-id is our second layer of access control (RLS policy).
-      // The JWT from anon auth is the first layer — added automatically.
-      headers: { 'x-family-id': familyId || '' }
+  supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+  if (familyId) {
+    const { data: { user } } = await supabaseClient.auth.getUser();
+    if (user && user.user_metadata?.family_id !== familyId) {
+      await supabaseClient.auth.updateUser({ data: { family_id: familyId } });
     }
-  });
+  }
+
   syncWithRemote();
   setupRealtime();
 }
@@ -358,11 +356,14 @@ async function createFamily() {
   // auth.uid() check passes and auth_user_id can be populated.
   await ensureAnonAuth();
 
-  const tmp = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
-    global: { headers: { 'x-family-id': newFamilyId } }
-  });
+  // Client normal
+  const tmpClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
-  await tmp.from('families').insert({
+  // 1. On donne l'autorisation au JWT d'écrire dans cette famille
+  await tmpClient.auth.updateUser({ data: { family_id: newFamilyId } });
+
+  // 2. Maintenant RLS nous autorise à créer la ligne
+  await tmpClient.from('families').insert({
     id: newFamilyId, baby_name: p.name, baby_emoji: p.emoji
   }).maybeSingle();
 

@@ -50,26 +50,17 @@ ALTER TABLE public.active_timers ENABLE ROW LEVEL SECURITY;
 -- 5. POLITIQUES STRICTES (Basées sur le header x-family-id)
 -- Autorise toutes les opérations (SELECT, INSERT, UPDATE, DELETE) 
 -- UNIQUEMENT SI le code JS envoie le bon header HTTP
-CREATE POLICY "Families strict policy" ON public.families
-  FOR ALL USING (
-    id::text = current_setting('request.headers', true)::json->>'x-family-id'
-  ) WITH CHECK (
-    id::text = current_setting('request.headers', true)::json->>'x-family-id'
-  );
+CREATE POLICY "Families policy" ON public.families
+  FOR ALL USING (id::text = auth.jwt()->'user_metadata'->>'family_id')
+  WITH CHECK  (id::text = auth.jwt()->'user_metadata'->>'family_id');
 
 CREATE POLICY "Logs policy" ON public.logs 
-  FOR ALL USING (
-    family_id::text = current_setting('request.headers', true)::json->>'x-family-id'
-  ) WITH CHECK (
-    family_id::text = current_setting('request.headers', true)::json->>'x-family-id'
-  );
+  FOR ALL USING (family_id::text = auth.jwt()->'user_metadata'->>'family_id')
+  WITH CHECK  (family_id::text = auth.jwt()->'user_metadata'->>'family_id');
 
 CREATE POLICY "Timers policy" ON public.active_timers 
-  FOR ALL USING (
-    family_id::text = current_setting('request.headers', true)::json->>'x-family-id'
-  ) WITH CHECK (
-    family_id::text = current_setting('request.headers', true)::json->>'x-family-id'
-  );
+  FOR ALL USING (family_id::text = auth.jwt()->'user_metadata'->>'family_id')
+  WITH CHECK  (family_id::text = auth.jwt()->'user_metadata'->>'family_id');
   
   
  
@@ -89,9 +80,7 @@ ALTER TABLE public.invite_codes ENABLE ROW LEVEL SECURITY;
 
 -- INSERT: only for your own family
 CREATE POLICY "invite_codes_insert" ON public.invite_codes
-  FOR INSERT WITH CHECK (
-    family_id::text = current_setting('request.headers', true)::json->>'x-family-id'
-  );
+  FOR INSERT WITH CHECK (family_id::text = auth.jwt()->'user_metadata'->>'family_id');
 
 -- SELECT: only if caller sends the exact code as x-invite-code header + not expired.
 -- Without this header a full table scan returns 0 rows — no enumeration possible.
