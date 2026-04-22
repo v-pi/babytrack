@@ -53,12 +53,21 @@ async function initSupabase() {
     }
   });
 
+  // CRITICAL: await the JWT update BEFORE calling setupRealtime().
+  //
+  // Supabase Realtime checks RLS via auth.jwt()->'user_metadata'->>'family_id'.
+  // If the JWT doesn't carry family_id yet when the WebSocket is opened,
+  // the server's RLS check silently fails and NO postgres_changes events are
+  // ever delivered — timers and logs appear to never sync in real-time.
   if (familyId) {
-    supabaseClient.auth.getUser().then(({ data: { user } }) => {
+    try {
+      const { data: { user } } = await supabaseClient.auth.getUser();
       if (user && user.user_metadata?.family_id !== familyId) {
-        supabaseClient.auth.updateUser({ data: { family_id: familyId } });
+        await supabaseClient.auth.updateUser({ data: { family_id: familyId } });
       }
-    });
+    } catch (e) {
+      console.warn('[BabyTrack] JWT family_id update failed (offline?):', e.message);
+    }
   }
 
   syncWithRemote();
@@ -236,7 +245,10 @@ async function pushPendingTimers() {
  */
 async function setRemoteTimer(type, side, startTime, paused = false, accumulated = 0) {
   const key = type + '_' + (side || 'none');
-  pendingTimers[key] = { type, side, startTime, paused, accumulated };
+  // _sentAt lets the realtime guard use a time-based TTL (5 s) instead of
+  // relying solely on key presence. This prevents a failed push from blocking
+  // realtime events indefinitely after the app restarts with stale pendingTimers.
+  pendingTimers[key] = { type, side, startTime, paused, accumulated, _sentAt: Date.now() };
   saveSyncQueues();
   pushPendingTimers(); // Launches sync in background, or keeps queued if offline
 }
@@ -312,7 +324,11 @@ function setupRealtime() {
       if (eventType === 'INSERT' || eventType === 'UPDATE') {
         if (!n) return;
         const key = n.type + '_' + (n.side || 'none');
-        if (pendingTimers[key]) return; // Local change in-flight — ignore echo
+        // Time-based guard: ignore own echo only if the push was < 5 s ago.
+        // A simple key-presence check would block realtime permanently if the
+        // push failed and the app restarted with stale pendingTimers in localStorage.
+        const pt = pendingTimers[key];
+        if (pt && (Date.now() - (pt._sentAt || 0)) < 5000) return;
 
         if (n.type === 'feed') {
           applyRemoteBreastTimer(n.side, n); // handles both paused & running
@@ -323,7 +339,8 @@ function setupRealtime() {
       } else if (eventType === 'DELETE') {
         if (!o) return;
         const key = o.type + '_' + (o.side || 'none');
-        if (pendingTimers[key]) return;
+        const pt = pendingTimers[key];
+        if (pt && (Date.now() - (pt._sentAt || 0)) < 5000) return;
         if (o.type === 'sleep' || o.side === 'none') stopSleepTimerLocal();
         else stopBreastTimerLocal(o.side);
       }
@@ -351,7 +368,16 @@ function setupRealtime() {
       if (n.baby_emoji && n.baby_emoji !== p.emoji) { p.emoji = n.baby_emoji; changed = true; }
       if (changed) { saveProfiles(); updateHeaderProfile(); showToast(`Profil mis à jour : ${p.name}`); }
     })
-    .subscribe();
+    .subscribe((status, err) => {
+      if (status === 'SUBSCRIBED') {
+        console.log('[BabyTrack] Realtime connected for family', familyId);
+      } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+        console.error('[BabyTrack] Realtime error:', status, err);
+        setSyncDot('error');
+      } else if (status === 'CLOSED') {
+        console.warn('[BabyTrack] Realtime channel closed');
+      }
+    });
 
   _realtimeChannels = [ch];
 }
