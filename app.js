@@ -27,7 +27,7 @@ window.onload = async () => {
     // Show a non-blocking banner instead of a silent empty state
     const banner = document.createElement('div');
     banner.textContent = '⚠️ Stockage local indisponible (navigation privée ?). Les données ne seront pas sauvegardées.';
-    banner.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:999;background:#e05;color:#fff;font-size:12px;font-weight:600;text-align:center;padding:8px 12px;';
+    banner.className = 'storage-warning';
     document.body.prepend(banner);
   }
 
@@ -82,7 +82,7 @@ window.onload = async () => {
   } else if (!familyId) {
     document.getElementById('sync-modal').classList.add('open');
   } else {
-    document.getElementById('btn-share').style.display = 'block';
+    document.getElementById('btn-share').classList.add('shown');
     initSupabase();
   }
 
@@ -108,9 +108,8 @@ function restoreTimers() {
     if (state.paused) {
       document.getElementById('btn-'+s).classList.add('paused');
       const pb = document.getElementById('pause-'+s);
-      pb.style.display = '';
+      pb.classList.add('shown');
       pb.textContent = '▶ Reprendre';
-      const el = document.getElementById('timer-'+s);
       if (el) el.textContent = fmtDur(state.accumulated);
     } else {
       activateBreastTimerLocal(s, state.start, state.accumulated || 0, state.origin || state.start);
@@ -140,9 +139,8 @@ function activateBreastTimerLocal(side, start, accumulated = 0, origin = null) {
   document.getElementById('btn-'+side).classList.add('running');
   document.getElementById('btn-'+side).classList.remove('paused');
   const pb = document.getElementById('pause-'+side);
-  pb.style.display = '';
+  pb.classList.add('shown');
   pb.textContent = '⏸ Pause';
-  startTick('b-'+side, () => {
     const el = document.getElementById('timer-'+side);
     if (el) el.textContent = fmtDur(accumulated + Date.now() - start);
   });
@@ -152,7 +150,7 @@ function activateBreastTimerLocal(side, start, accumulated = 0, origin = null) {
 function stopBreastTimerLocal(side) {
   breastActive[side] = null;
   document.getElementById('btn-'+side).classList.remove('running', 'paused');
-  document.getElementById('pause-'+side).style.display = 'none';
+  document.getElementById('pause-'+side).classList.remove('shown');
   stopTick('b-'+side);
   const el = document.getElementById('timer-'+side);
   if (el) el.textContent = '00:00';
@@ -354,34 +352,15 @@ function exportCSV() {
 // ── PROFILE MODAL ─────────────────────────────────────────────────────────────
 function openProfileModal() {
   renderProfileList();
-  document.getElementById('profile-form').style.display = 'none';
+  document.getElementById('profile-form').classList.remove('shown');
   document.getElementById('profile-modal').classList.add('open');
-}
-function closeProfileModal(e) {
-  if (e && e.target !== document.getElementById('profile-modal')) return;
-  document.getElementById('profile-modal').classList.remove('open');
-}
-
-async function switchToProfile(profileId) {
-  if (profileId === activeProfileId) { closeProfileModal(); return; }
-  stopAllActive('__none__'); stopAllTicks(); saveSession();
-  activeProfileId = profileId; saveProfiles();
-  familyId = getActiveProfile().familyId;
-  updateHeaderProfile();
-  document.getElementById('profile-modal').classList.remove('open');
-  supabaseClient = null; breastActive = {left:null,right:null}; sleepActive = null;
-  await loadProfileData();
-  document.getElementById('btn-share').style.display = familyId ? 'block' : 'none';
-  if (familyId) initSupabase();
-  else document.getElementById('sync-modal').classList.add('open');
-  showToast('Profil : ' + getActiveProfile().name);
 }
 
 function openAddProfileForm() {
   editingProfileId = null;
   document.getElementById('pf-name').value = '';
   renderEmojiGrid('👶');
-  document.getElementById('profile-form').style.display = 'block';
+  document.getElementById('profile-form').classList.add('shown');
   document.querySelector('#profile-form .btn-save').textContent = 'Créer';
 }
 
@@ -391,17 +370,12 @@ function openEditProfile(profileId) {
   if (!p) return;
   document.getElementById('pf-name').value = p.name;
   renderEmojiGrid(p.emoji);
-  document.getElementById('profile-form').style.display = 'block';
+  document.getElementById('profile-form').classList.add('shown');
   document.querySelector('#profile-form .btn-save').textContent = 'Enregistrer';
 }
 
-function selectEmoji(e, el) {
-  document.querySelectorAll('.emoji-opt').forEach(x => x.classList.remove('selected'));
-  el.classList.add('selected');
-}
-
 function closeProfileForm() {
-  document.getElementById('profile-form').style.display = 'none';
+  document.getElementById('profile-form').classList.remove('shown');
   editingProfileId = null;
 }
 
@@ -458,7 +432,7 @@ async function openShareModal() {
   // Reset display to loading state before opening
   document.getElementById('share-code-display').textContent = '···-····';
   document.getElementById('share-countdown').textContent    = '--:--';
-  document.getElementById('share-countdown').style.color   = '';
+  document.getElementById('share-countdown').classList.remove('expired');
   document.getElementById('qr-code').src = '';
   document.getElementById('share-modal').classList.add('open');
   await _generateAndDisplayCode();
@@ -471,8 +445,8 @@ async function _generateAndDisplayCode() {
   const result = await createInviteCode();
 
   if (!result) {
-    document.getElementById('share-countdown').textContent  = 'Erreur ⚠️';
-    document.getElementById('share-countdown').style.color = 'var(--red, #e05)';
+    document.getElementById('share-countdown').textContent = 'Erreur ⚠️';
+    document.getElementById('share-countdown').classList.add('expired');
     showToast('Impossible de créer un code');
     return;
   }
@@ -494,8 +468,8 @@ async function _generateAndDisplayCode() {
     if (remaining <= 0) {
       clearInterval(_shareCountdownInterval);
       _shareCountdownInterval = null;
-      document.getElementById('share-countdown').textContent  = 'Expiré — génère un nouveau code';
-      document.getElementById('share-countdown').style.color = 'var(--red, #e05)';
+      document.getElementById('share-countdown').textContent = 'Expiré — génère un nouveau code';
+      document.getElementById('share-countdown').classList.add('expired');
       document.getElementById('share-code-display').textContent = '···-····';
       return;
     }
@@ -510,7 +484,7 @@ async function _generateAndDisplayCode() {
 async function refreshInviteCode() {
   document.getElementById('share-code-display').textContent = '···-····';
   document.getElementById('share-countdown').textContent    = '--:--';
-  document.getElementById('share-countdown').style.color   = '';
+  document.getElementById('share-countdown').classList.remove('expired');
   await _generateAndDisplayCode();
 }
 
@@ -540,10 +514,9 @@ function openEdit(id) {
       <div class="modal-field"><label>Heure</label><input type="time" id="ed-t" value="${fmtHM(editingLog.timestamp)}"/></div>
     </div>
     <div class="modal-field"><label>Type</label>
-      <div style="display:flex;gap:8px;margin-top:4px">
+      <div class="edit-type-group">
         ${dtypes.map(t => `<button onclick="setEditDiaperType('${t}',this)" id="ed-dtype-${t}"
-          style="flex:1;padding:10px 6px;border-radius:10px;border:2px solid ${editingLog.diaperType===t?'var(--pink)':'var(--border)'};
-          background:${editingLog.diaperType===t?'var(--pink-light)':'var(--bg)'};font-size:13px;font-weight:600;cursor:pointer">
+          class="edit-type-btn${editingLog.diaperType===t?' active':''}">
           ${dlabels[t]}</button>`).join('')}
       </div>
     </div>`;
@@ -553,18 +526,16 @@ function openEdit(id) {
       <div class="modal-field"><label>Heure</label><input type="time" id="ed-t" value="${fmtHM(editingLog.timestamp)}"/></div>
     </div>
     <div class="modal-field"><label>Volume (ml)</label>
-      <input type="number" id="ed-vol" min="0" max="999" step="10" value="${editingLog.volume || 0}" style="font-size:22px;font-weight:700;text-align:center"/>
+      <input type="number" id="ed-vol" min="0" max="999" step="10" value="${editingLog.volume || 0}" class="edit-vol-input"/>
     </div>`;
   } else {
     // feed or sleep — for feed, add a side selector
     const sideSelector = editingLog.type === 'feed' ? `
     <div class="modal-field"><label>Sein</label>
-      <div style="display:flex;gap:8px;margin-top:4px">
+      <div class="edit-type-group">
         ${[['left','👈 Gauche'],['right','Droit 👉']].map(([val, label]) => `
           <button id="ed-side-${val}" onclick="setEditFeedSide('${val}',this)"
-            style="flex:1;padding:10px 6px;border-radius:10px;font-size:13px;font-weight:600;cursor:pointer;
-                   border:2px solid ${editingLog.side===val?'var(--pink)':'var(--border)'};
-                   background:${editingLog.side===val?'var(--pink-light)':'var(--bg)'}">
+            class="edit-type-btn${editingLog.side===val?' active':''}">
             ${label}
           </button>`).join('')}
       </div>
@@ -583,10 +554,7 @@ function setEditFeedSide(side, btn) {
   editingLog.side = side;
   ['left', 'right'].forEach(s => {
     const b = document.getElementById('ed-side-' + s);
-    if (b) {
-      b.style.borderColor = s === side ? 'var(--pink)' : 'var(--border)';
-      b.style.background  = s === side ? 'var(--pink-light)' : 'var(--bg)';
-    }
+    if (b) b.classList.toggle('active', s === side);
   });
 }
 
@@ -594,10 +562,7 @@ function setEditDiaperType(type, btn) {
   editingLog.diaperType = type;
   ['wet','dirty','mixed'].forEach(t => {
     const b = document.getElementById('ed-dtype-'+t);
-    if (b) {
-      b.style.borderColor = t === type ? 'var(--pink)' : 'var(--border)';
-      b.style.background  = t === type ? 'var(--pink-light)' : 'var(--bg)';
-    }
+    if (b) b.classList.toggle('active', t === type);
   });
 }
 

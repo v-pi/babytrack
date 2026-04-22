@@ -13,7 +13,7 @@
   <script>
     (function(){var t=localStorage.getItem('bt_theme');if(t==='dark')document.documentElement.setAttribute('data-theme','dark');})();
   </script>
-  <link rel="stylesheet" href="main.css?v=57"/>
+  <link rel="stylesheet" href="main.css?v=58"/>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>
@@ -31,7 +31,7 @@
   <div class="header-right">
     <div class="sync-dot" id="sync-dot" title="Synchronisation"></div>
     <button class="theme-toggle" id="btn-theme" onclick="toggleTheme()" title="Changer de thème">🌙</button>
-    <button class="share-icon" id="btn-share" style="display:none" onclick="openShareModal()">
+    <button class="share-icon" id="btn-share" onclick="openShareModal()">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
     </button>
   </div>
@@ -52,7 +52,7 @@
             <div class="b-label">Sein gauche</div>
             <div class="b-timer" id="timer-left">00:00</div>
           </button>
-          <button class="pause-breast-btn left" id="pause-left" onclick="togglePauseBreast('left')" style="display:none">⏸ Pause</button>
+          <button class="pause-breast-btn left" id="pause-left" onclick="togglePauseBreast('left')">⏸ Pause</button>
           <div class="last-feed" id="last-left"></div>
         </div>
         <div>
@@ -62,7 +62,7 @@
             <div class="b-label">Sein droit</div>
             <div class="b-timer" id="timer-right">00:00</div>
           </button>
-          <button class="pause-breast-btn right" id="pause-right" onclick="togglePauseBreast('right')" style="display:none">⏸ Pause</button>
+          <button class="pause-breast-btn right" id="pause-right" onclick="togglePauseBreast('right')">⏸ Pause</button>
           <div class="last-feed" id="last-right"></div>
         </div>
       </div>
@@ -164,13 +164,13 @@
       Exporter en CSV
     </button>
     <div id="tl-day-nav"></div>
-    <div class="card" style="padding:12px 14px;margin-bottom:14px">
-      <div class="tl-legend" style="padding:0;border:none">
+    <div class="card card--compact">
+      <div class="tl-legend tl-legend--bare">
         <div class="tl-leg-item"><div class="tl-leg-bar left"></div>Sein gauche</div>
         <div class="tl-leg-item"><div class="tl-leg-bar right"></div>Sein droit</div>
         <div class="tl-leg-item"><div class="tl-leg-bar sleep"></div>Sommeil</div>
-        <div class="tl-leg-item"><div class="tl-leg-dot wet" style="border:none"></div>Pipi</div>
-        <div class="tl-leg-item"><div class="tl-leg-dot dirty" style="border:none"></div>Selle</div>
+        <div class="tl-leg-item"><div class="tl-leg-dot wet"></div>Pipi</div>
+        <div class="tl-leg-item"><div class="tl-leg-dot dirty"></div>Selle</div>
       </div>
     </div>
     <div id="timeline-container"></div>
@@ -231,12 +231,12 @@
     <div class="modal-handle"></div>
     <div class="modal-title">Profils enfants</div>
     <div class="profile-list" id="profile-list"></div>
-    <div style="display:flex;gap:10px;margin-top:4px">
-      <button class="btn btn-save" style="flex:1" onclick="openAddProfileForm()">+ Ajouter</button>
-      <button class="btn btn-delete" style="flex:none;padding:13px 16px" onclick="confirmReset()" title="Réinitialiser les données">🗑 Reset</button>
+    <div class="profile-actions">
+      <button class="btn btn-save" onclick="openAddProfileForm()">+ Ajouter</button>
+      <button class="btn btn-delete btn--icon" onclick="confirmReset()" title="Réinitialiser les données">🗑 Reset</button>
     </div>
-    <div id="profile-form" style="display:none;margin-top:16px">
-      <hr style="border:none;border-top:1px solid var(--border);margin-bottom:16px"/>
+    <div id="profile-form">
+      <hr class="modal-divider"/>
       <div class="modal-field">
         <label>Prénom</label>
         <input type="text" id="pf-name" placeholder="Ex : Emma" maxlength="20"/>
@@ -245,7 +245,7 @@
         <label>Emoji</label>
         <div class="emoji-grid" id="emoji-grid"></div>
       </div>
-      <div class="modal-actions" style="margin-top:0">
+      <div class="modal-actions modal-actions--flush">
         <button class="btn btn-cancel" onclick="closeProfileForm()">Annuler</button>
         <button class="btn btn-save" onclick="saveProfile()">Créer</button>
       </div>
@@ -255,63 +255,55 @@
 
 <!-- ── MODAL SYNC / FAMILLE ── -->
 <div class="modal-overlay" id="sync-modal">
-  <div class="modal center" style="width:90%">
-    <div class="modal-title" style="text-align:center;font-size:20px;">👶 Synchronisation</div>
-    <p style="font-size:14px;color:var(--text-muted);text-align:center;margin-bottom:20px;line-height:1.4">Créez une famille pour partager avec l'autre parent, ou rejoignez-en une existante.</p>
-    <div style="display:flex;flex-direction:column;gap:12px;">
+  <div class="modal center">
+    <div class="modal-title modal-title--center">👶 Synchronisation</div>
+    <p class="sync-modal-desc">Créez une famille pour partager avec l'autre parent, ou rejoignez-en une existante.</p>
+    <div class="sync-modal-body">
       <button class="btn btn-save" onclick="createFamily()">Créer ma famille</button>
-      <div style="text-align:center;color:var(--text-muted);font-size:12px;margin:2px 0">— ou —</div>
+      <div class="sync-divider">— ou —</div>
       <input type="text" id="invite-code"
         placeholder="Ex : MJK-9P4"
         maxlength="8"
         autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false"
-        oninput="this.value=this.value.toUpperCase().replace(/[^A-Z0-9-]/g,'').slice(0,8)"
-        style="width:100%;border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px;font-size:20px;font-weight:700;text-align:center;letter-spacing:3px;font-family:monospace;box-sizing:border-box"/>
-      <button class="btn btn-cancel" style="border:1px solid var(--border)" onclick="joinFamily()">Rejoindre avec le code</button>
-      <button class="btn btn-cancel" style="opacity:.6;font-size:12px" onclick="skipSync()">Continuer sans synchronisation</button>
+        oninput="this.value=this.value.toUpperCase().replace(/[^A-Z0-9-]/g,'').slice(0,8)"/>
+      <button class="btn btn-cancel btn--outlined" onclick="joinFamily()">Rejoindre avec le code</button>
+      <button class="btn btn-cancel btn--muted" onclick="skipSync()">Continuer sans synchronisation</button>
     </div>
   </div>
 </div>
 
 <!-- ── MODAL PARTAGE ── -->
 <div class="modal-overlay" id="share-modal" onclick="closeShareModal(event)">
-  <div class="modal center" style="width:90%">
-    <div class="modal-title" style="text-align:center;">Partager l'accès</div>
-    <p style="font-size:13px;color:var(--text-muted);text-align:center;margin-bottom:6px;">Donnez ce code à l'autre parent. Valable :</p>
+  <div class="modal center">
+    <div class="modal-title modal-title--center">Partager l'accès</div>
+    <p class="share-modal-desc">Donnez ce code à l'autre parent. Valable :</p>
 
     <!-- Countdown -->
-    <div id="share-countdown"
-         style="text-align:center;font-size:26px;font-weight:700;color:var(--pink);margin-bottom:10px;font-variant-numeric:tabular-nums;letter-spacing:1px">
-      --:--
-    </div>
+    <div id="share-countdown">--:--</div>
 
     <!-- Short code — big, monospace, easy to read aloud -->
-    <div id="share-code-display"
-         style="text-align:center;font-size:40px;font-weight:800;letter-spacing:6px;margin-bottom:16px;font-family:monospace;color:var(--text)">
-      ···-····
-    </div>
+    <div id="share-code-display">···-····</div>
 
     <!-- QR code for scan-to-join -->
-    <img id="qr-code" src="" alt="QR Code"
-         style="width:160px;height:160px;margin:0 auto 18px;display:block;border-radius:12px;border:1px solid var(--border);padding:10px;"/>
+    <img id="qr-code" src="" alt="QR Code"/>
 
     <!-- Actions -->
-    <div style="display:flex;gap:10px;margin-bottom:10px">
-      <button class="btn btn-save"   style="flex:1;font-size:13px"                       onclick="copyShareLink()">📋 Copier le lien</button>
-      <button class="btn btn-cancel" style="flex:none;padding:13px 14px;font-size:13px;white-space:nowrap" onclick="refreshInviteCode()">🔄 Nouveau</button>
+    <div class="modal-btn-row">
+      <button class="btn btn-save btn--sm"                              onclick="copyShareLink()">📋 Copier le lien</button>
+      <button class="btn btn-cancel btn--icon btn--sm btn--nowrap"      onclick="refreshInviteCode()">🔄 Nouveau</button>
     </div>
-    <button class="btn btn-cancel" style="width:100%" onclick="closeShareModal()">Fermer</button>
+    <button class="btn btn-cancel btn--full" onclick="closeShareModal()">Fermer</button>
   </div>
 </div>
 
 <div class="toast" id="toast"></div>
 
 <!-- ── SCRIPTS (all at root level, versioned) ── -->
-<script src="utils.js?v=57"></script>
-<script src="db.js?v=57"></script>
-<script src="state.js?v=57"></script>
-<script src="render.js?v=57"></script>
-<script src="sync.js?v=57"></script>
-<script src="app.js?v=57"></script>
+<script src="utils.js?v=58"></script>
+<script src="db.js?v=58"></script>
+<script src="state.js?v=58"></script>
+<script src="render.js?v=58"></script>
+<script src="sync.js?v=58"></script>
+<script src="app.js?v=58"></script>
 </body>
 </html>

@@ -170,7 +170,7 @@ function applyRemoteBreastTimer(side, row) {
     document.getElementById('btn-' + side).classList.remove('running');
     document.getElementById('btn-' + side).classList.add('paused');
     const pb = document.getElementById('pause-' + side);
-    pb.style.display = '';
+    pb.classList.add('shown');
     pb.textContent   = '▶ Reprendre';
     const el = document.getElementById('timer-' + side);
     if (el) el.textContent = fmtDur(row.accumulated || 0);
@@ -371,7 +371,7 @@ async function createFamily() {
   familyId = newFamilyId;
 
   document.getElementById('sync-modal').classList.remove('open');
-  document.getElementById('btn-share').style.display = 'block';
+  document.getElementById('btn-share').classList.add('shown');
 
   initSupabase();
 
@@ -469,7 +469,7 @@ async function joinFamily() {
   familyId = data.family_id;
 
   document.getElementById('sync-modal').classList.remove('open');
-  document.getElementById('btn-share').style.display = 'block';
+  document.getElementById('btn-share').classList.add('shown');
   setSyncDot('');
   initSupabase();
   showToast('Famille rejointe, synchronisation…');

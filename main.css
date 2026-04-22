@@ -125,9 +125,11 @@ body{
 .breast-btn.paused .status-dot{background:var(--amber)}
 .breast-btn.paused .b-timer{color:var(--amber)}
 .pause-breast-btn{
+  display:none;
   width:100%;border:none;border-radius:var(--radius-sm);padding:8px;margin-top:5px;cursor:pointer;
   font-size:12px;font-weight:600;transition:opacity .15s;
 }
+.pause-breast-btn.shown{display:block}
 .pause-breast-btn.left{background:var(--pink-light);color:var(--pink)}
 .pause-breast-btn.right{background:var(--blue-light);color:var(--blue)}
 .pause-breast-btn:active{opacity:.7}
@@ -299,7 +301,7 @@ body{
 }
 .modal-overlay.open .modal{transform:translateY(0)}
 .modal.center{
-  border-radius:20px;margin:auto;
+  border-radius:20px;margin:auto;width:90%;
   transform:translateY(20px);max-height:85dvh;
   padding:24px 24px calc(24px + var(--sab));
 }
@@ -312,7 +314,8 @@ body{
 .modal-row .modal-field{margin-bottom:0;flex:1}
 .modal-field input[type=time],
 .modal-field input[type=date],
-.modal-field input[type=text]{
+.modal-field input[type=text],
+.modal-field input[type=number]{
   width:100%;border:1px solid var(--border);border-radius:var(--radius-sm);
   padding:10px 12px;font-size:15px;color:var(--text);background:var(--bg);
   font-family:inherit;-webkit-appearance:none;appearance:none;
@@ -357,7 +360,8 @@ body{
   transition:transform .25s;
 }
 .theme-toggle:active{transform:scale(.85)}
-.share-icon{background:none;border:none;color:var(--pink);cursor:pointer;padding:5px}
+.share-icon{display:none;background:none;border:none;color:var(--pink);cursor:pointer;padding:5px}
+.share-icon.shown{display:block}
 .toast{
   position:fixed;
   bottom:calc(var(--tab-h) + 12px + var(--sab));
@@ -458,5 +462,82 @@ body{
 }
 [data-theme="dark"] .modal-field input[type=time],
 [data-theme="dark"] .modal-field input[type=date],
-[data-theme="dark"] .modal-field input[type=text]{color-scheme:dark}
+[data-theme="dark"] .modal-field input[type=text],
+[data-theme="dark"] .modal-field input[type=number]{color-scheme:dark}
 [data-theme="dark"] #invite-code{color-scheme:dark}
+
+/* ── PROFILE FORM (caché par défaut) ── */
+#profile-form{display:none;margin-top:16px}
+#profile-form.shown{display:block}
+
+/* ── MODAL : variantes ── */
+.modal-title--center{text-align:center;font-size:20px}
+.modal-divider{border:none;border-top:1px solid var(--border);margin-bottom:16px}
+.modal-actions--flush{margin-top:0}
+.modal-btn-row{display:flex;gap:10px;margin-bottom:10px}
+
+/* ── BOUTONS : modificateurs ── */
+.btn--icon{flex:none;padding:13px 14px}
+.btn--full{width:100%}
+.btn--sm{font-size:13px}
+.btn--nowrap{white-space:nowrap}
+.btn--outlined{border:1px solid var(--border)}
+.btn--muted{opacity:.6;font-size:12px}
+
+/* ── CARD COMPACTE (légende timeline) ── */
+.card--compact{padding:12px 14px;margin-bottom:14px}
+
+/* ── LÉGENDE TIMELINE : variante sans padding/border ── */
+.tl-legend--bare{padding:0;border:none}
+
+/* ── PROFIL : rangée d'actions ── */
+.profile-actions{display:flex;gap:10px;margin-top:4px}
+
+/* ── MODAL SYNC ── */
+.sync-modal-desc{
+  font-size:14px;color:var(--text-muted);text-align:center;
+  margin-bottom:20px;line-height:1.4;
+}
+.sync-modal-body{display:flex;flex-direction:column;gap:12px}
+.sync-divider{text-align:center;color:var(--text-muted);font-size:12px;margin:2px 0}
+#invite-code{
+  width:100%;border:1px solid var(--border);border-radius:var(--radius-sm);
+  padding:14px;font-size:20px;font-weight:700;text-align:center;
+  letter-spacing:3px;font-family:monospace;box-sizing:border-box;
+}
+
+/* ── MODAL PARTAGE ── */
+.share-modal-desc{font-size:13px;color:var(--text-muted);text-align:center;margin-bottom:6px}
+#share-countdown{
+  text-align:center;font-size:26px;font-weight:700;color:var(--pink);
+  margin-bottom:10px;font-variant-numeric:tabular-nums;letter-spacing:1px;
+}
+#share-countdown.expired{color:#e05}
+#share-code-display{
+  text-align:center;font-size:40px;font-weight:800;
+  letter-spacing:6px;margin-bottom:16px;font-family:monospace;color:var(--text);
+}
+#qr-code{
+  width:160px;height:160px;margin:0 auto 18px;display:block;
+  border-radius:12px;border:1px solid var(--border);padding:10px;
+}
+
+/* ── BANNIÈRE STOCKAGE INDISPONIBLE ── */
+.storage-warning{
+  position:fixed;top:0;left:0;right:0;z-index:999;
+  background:#e05;color:#fff;font-size:12px;font-weight:600;
+  text-align:center;padding:8px 12px;
+}
+
+/* ── SÉLECTEUR DE TYPE (modal édition) ── */
+.edit-type-group{display:flex;gap:8px;margin-top:4px}
+.edit-type-btn{
+  flex:1;padding:10px 6px;border-radius:10px;
+  border:2px solid var(--border);background:var(--bg);
+  font-size:13px;font-weight:600;cursor:pointer;
+  transition:border-color .15s,background .15s;
+}
+.edit-type-btn.active{border-color:var(--pink);background:var(--pink-light)}
+
+/* ── INPUT VOLUME (modal édition biberon) ── */
+.edit-vol-input{font-size:22px;font-weight:700;text-align:center}

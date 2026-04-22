@@ -17,12 +17,12 @@ CREATE TABLE IF NOT EXISTS public.logs (
   id uuid PRIMARY KEY,
   family_id uuid REFERENCES public.families(id) ON DELETE CASCADE,
   type text NOT NULL CONSTRAINT type_length CHECK (length(type) < 50),
-  side text,
+  side text CONSTRAINT side_length CHECK (length(side) < 20),
   "start" bigint,
   "end" bigint,
   duration bigint,
   "timestamp" bigint,
-  "diaperType" text,
+  "diaperType" text CONSTRAINT diaper_type_length CHECK (length("diaperType") < 20),
   volume integer,
   updated_at timestamptz DEFAULT now()
 );
@@ -106,3 +106,9 @@ CREATE POLICY "invite_codes_select" ON public.invite_codes
 CREATE TRIGGER shadow_ban_invite_codes_trigger
 BEFORE INSERT OR UPDATE OR DELETE ON public.invite_codes
 FOR EACH ROW EXECUTE FUNCTION public.check_and_apply_shadow_ban();
+
+ALTER POLICY "Families strict policy" ON public.families TO authenticated;
+ALTER POLICY "Logs policy" ON public.logs TO authenticated;
+ALTER POLICY "Timers policy" ON public.active_timers TO authenticated;
+ALTER POLICY "invite_codes_insert" ON public.invite_codes TO authenticated;
+ALTER POLICY "invite_codes_select" ON public.invite_codes TO authenticated;
