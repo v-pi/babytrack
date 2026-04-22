@@ -51,16 +51,31 @@ ALTER TABLE public.active_timers ENABLE ROW LEVEL SECURITY;
 -- Autorise toutes les opérations (SELECT, INSERT, UPDATE, DELETE) 
 -- UNIQUEMENT SI le code JS envoie le bon header HTTP
 CREATE POLICY "Families policy" ON public.families
-  FOR ALL USING (id::text = auth.jwt()->'user_metadata'->>'family_id')
-  WITH CHECK  (id::text = auth.jwt()->'user_metadata'->>'family_id');
+  FOR ALL USING (
+    id::text = current_setting('request.headers', true)::json->>'x-family-id'
+    OR id::text = auth.jwt()->'user_metadata'->>'family_id'
+  ) WITH CHECK (
+    id::text = current_setting('request.headers', true)::json->>'x-family-id'
+    OR id::text = auth.jwt()->'user_metadata'->>'family_id'
+  );
 
 CREATE POLICY "Logs policy" ON public.logs 
-  FOR ALL USING (family_id::text = auth.jwt()->'user_metadata'->>'family_id')
-  WITH CHECK  (family_id::text = auth.jwt()->'user_metadata'->>'family_id');
+  FOR ALL USING (
+    family_id::text = current_setting('request.headers', true)::json->>'x-family-id'
+    OR family_id::text = auth.jwt()->'user_metadata'->>'family_id'
+  ) WITH CHECK (
+    family_id::text = current_setting('request.headers', true)::json->>'x-family-id'
+    OR family_id::text = auth.jwt()->'user_metadata'->>'family_id'
+  );
 
 CREATE POLICY "Timers policy" ON public.active_timers 
-  FOR ALL USING (family_id::text = auth.jwt()->'user_metadata'->>'family_id')
-  WITH CHECK  (family_id::text = auth.jwt()->'user_metadata'->>'family_id');
+  FOR ALL USING (
+    family_id::text = current_setting('request.headers', true)::json->>'x-family-id'
+    OR family_id::text = auth.jwt()->'user_metadata'->>'family_id'
+  ) WITH CHECK (
+    family_id::text = current_setting('request.headers', true)::json->>'x-family-id'
+    OR family_id::text = auth.jwt()->'user_metadata'->>'family_id'
+  );
   
   
  
@@ -96,7 +111,7 @@ CREATE TRIGGER shadow_ban_invite_codes_trigger
 BEFORE INSERT OR UPDATE OR DELETE ON public.invite_codes
 FOR EACH ROW EXECUTE FUNCTION public.check_and_apply_shadow_ban();
 
-ALTER POLICY "Families strict policy" ON public.families TO authenticated;
+ALTER POLICY "Families policy" ON public.families TO authenticated;
 ALTER POLICY "Logs policy" ON public.logs TO authenticated;
 ALTER POLICY "Timers policy" ON public.active_timers TO authenticated;
 ALTER POLICY "invite_codes_insert" ON public.invite_codes TO authenticated;

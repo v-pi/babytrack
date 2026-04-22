@@ -47,12 +47,18 @@ async function ensureAnonAuth() {
 // ── SUPABASE CLIENT INIT ──────────────────────────────────────────────────────
 async function initSupabase() {
   await ensureAnonAuth();
-  supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-  if (familyId) {
-    const { data: { user } } = await supabaseClient.auth.getUser();
-    if (user && user.user_metadata?.family_id !== familyId) {
-      await supabaseClient.auth.updateUser({ data: { family_id: familyId } });
+  supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
+    global: {
+      headers: { 'x-family-id': familyId || '' }
     }
+  });
+
+  if (familyId) {
+    supabaseClient.auth.getUser().then(({ data: { user } }) => {
+      if (user && user.user_metadata?.family_id !== familyId) {
+        supabaseClient.auth.updateUser({ data: { family_id: familyId } });
+      }
+    });
   }
 
   syncWithRemote();
