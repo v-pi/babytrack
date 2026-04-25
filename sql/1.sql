@@ -116,3 +116,8 @@ ALTER POLICY "Logs policy" ON public.logs TO authenticated;
 ALTER POLICY "Timers policy" ON public.active_timers TO authenticated;
 ALTER POLICY "invite_codes_insert" ON public.invite_codes TO authenticated;
 ALTER POLICY "invite_codes_select" ON public.invite_codes TO authenticated;
+
+
+ALTER PUBLICATION supabase_realtime ADD TABLE public.families;
+ALTER PUBLICATION supabase_realtime ADD TABLE public.logs;
+ALTER PUBLICATION supabase_realtime ADD TABLE public.active_timers;

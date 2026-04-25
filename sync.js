@@ -199,7 +199,10 @@ function applyRemoteBreastTimer(side, row) {
     // start_time here is the timestamp of the last resume (or initial start).
     // accumulated is the total time from previous segments before that resume.
     const local = breastActive[side];
-    if (local && !local.paused) return; // already running locally — don't reset tick
+    // Guard: skip only if already running with the EXACT same segment start and
+    // accumulated. If start_time changed (the other device resumed after a pause)
+    // or accumulated differs, we must re-apply — otherwise the resume never shows.
+    if (local && !local.paused && local.start === startMs && local.accumulated === acc) return;
 
     activateBreastTimerLocal(side, startMs, acc, startMs);
   }
@@ -371,6 +374,10 @@ function setupRealtime() {
     .subscribe((status, err) => {
       if (status === 'SUBSCRIBED') {
         console.log('[BabyTrack] Realtime connected for family', familyId);
+        // Re-sync timers now that the channel is live. Catches any timer event
+        // that fired in the gap between syncWithRemote() completing and the
+        // WebSocket subscription being fully established.
+        syncTimersFromRemote();
       } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
         console.error('[BabyTrack] Realtime error:', status, err);
         setSyncDot('error');
