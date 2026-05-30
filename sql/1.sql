@@ -24,7 +24,8 @@ CREATE TABLE IF NOT EXISTS public.logs (
   "timestamp" bigint,
   "diaperType" text CONSTRAINT diaper_type_length CHECK (length("diaperType") < 20),
   volume integer,
-  updated_at timestamptz DEFAULT now()
+  updated_at timestamptz DEFAULT now(),
+  deleted boolean NOT NULL DEFAULT false
 );
 
 CREATE TABLE IF NOT EXISTS public.active_timers (
@@ -39,7 +40,7 @@ CREATE TABLE IF NOT EXISTS public.active_timers (
 
 -- 3. INDEX DE PERFORMANCE
 -- Indispensable pour éviter un "full table scan" lors de la synchro d'une famille
-CREATE INDEX IF NOT EXISTS idx_logs_family_id ON public.logs (family_id);
+CREATE INDEX IF NOT EXISTS idx_logs_family_updated ON public.logs (family_id, updated_at);
 
 -- 4. SÉCURITÉ (RLS - ROW LEVEL SECURITY)
 -- Activation de la sécurité sur toutes les tables
@@ -121,3 +122,14 @@ ALTER POLICY "invite_codes_select" ON public.invite_codes TO authenticated;
 ALTER PUBLICATION supabase_realtime ADD TABLE public.families;
 ALTER PUBLICATION supabase_realtime ADD TABLE public.logs;
 ALTER PUBLICATION supabase_realtime ADD TABLE public.active_timers;
+
+
+-- Archive table in case of bad manipulation
+CREATE TABLE IF NOT EXISTS public.logs_archive (
+  LIKE public.logs INCLUDING ALL,
+  archived_at timestamptz NOT NULL DEFAULT now()
+);
+
+INSERT INTO public.logs_archive
+SELECT *, now() AS archived_at
+FROM public.logs;

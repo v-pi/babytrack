@@ -102,29 +102,23 @@ async function syncWithRemote() {
     // 3. Pousser les chronos en attente hors ligne
     await pushPendingTimers();
 
-    // 4. Récupérer les ID pour détecter les suppressions externes (très léger en data)
-    const { data: serverIds } = await supabaseClient.from('logs').select('id').eq('family_id', familyId);
     let uiChanged = false;
-    
-    if (serverIds) {
-      const serverIdSet = new Set(serverIds.map(x => x.id));
-      // Filtre les logs locaux effacés à distance (et pas en cours d'ajout chez nous)
-      const toDelete = allLogs.filter(l => !serverIdSet.has(l.id) && !pendingSyncIds.has(l.id));
-      for (const dLog of toDelete) {
-        allLogs = allLogs.filter(l => l.id !== dLog.id);
-        await dbDel(dLog.id);
-        uiChanged = true;
-      }
-    }
 
-    // 5. Delta Sync (récupérer uniquement ce qui a changé depuis la dernière fois)
+    // 5. Delta Sync — récupère uniquement ce qui a changé depuis la dernière synchro.
     const syncKey = 'bt_last_sync_' + familyId;
-    const lastSync = allLogs.length > 0 ? (localStorage.getItem(syncKey) || '1970-01-01T00:00:00Z') : '1970-01-01T00:00:00Z';
-    
-    const { data: recentData, error } = await supabaseClient
+    const isInitialSync = allLogs.length === 0;
+    const lastSync = !isInitialSync ? (localStorage.getItem(syncKey) || '1970-01-01T00:00:00Z') : '1970-01-01T00:00:00Z';
+
+    let query = supabaseClient
       .from('logs').select('*')
       .eq('family_id', familyId)
       .gte('updated_at', lastSync);
+
+    // Synchro initiale : on ne charge que les lignes actives.
+    // Delta sync : on veut aussi les deleted=true pour les propager localement.
+    if (isInitialSync) query = query.eq('deleted', false);
+
+    const { data: recentData, error } = await query;
       
     if (error) throw error;
 
@@ -133,9 +127,15 @@ async function syncWithRemote() {
         const idx = allLogs.findIndex(l => l.id === sLog.id);
         // Eviter d'écraser une modif locale non encore envoyée (Race condition fix)
         if (!pendingSyncIds.has(sLog.id) && !pendingDeletes.has(sLog.id)) {
-          if (idx >= 0) allLogs[idx] = sLog;
-          else allLogs.push(sLog);
-          await dbPut(sLog);
+          if (sLog.deleted) {
+            // Soft delete distant : retirer de l'UI et d'IDB
+            if (idx >= 0) allLogs = allLogs.filter(l => l.id !== sLog.id);
+            await dbDel(sLog.id);
+          } else {
+            if (idx >= 0) allLogs[idx] = sLog;
+            else allLogs.push(sLog);
+            await dbPut(sLog);
+          }
           uiChanged = true;
         }
       }
@@ -351,10 +351,18 @@ function setupRealtime() {
     .on('postgres_changes', { event: '*', schema: 'public', table: 'logs', filter: `family_id=eq.${familyId}` }, ({ eventType, new: n, old: o }) => {
       if (eventType === 'INSERT' || eventType === 'UPDATE') {
         if (pendingSyncIds.has(n.id)) return; // Ignorer l'écho de sa propre action
-        const idx = allLogs.findIndex(l => l.id === n.id);
-        if (idx >= 0) allLogs[idx] = n; else allLogs.push(n);
-        dbPut(n); renderCurrentTab();
+        if (n.deleted) {
+          // Soft delete distant reçu en temps réel
+          allLogs = allLogs.filter(l => l.id !== n.id);
+          dbDel(n.id);
+        } else {
+          const idx = allLogs.findIndex(l => l.id === n.id);
+          if (idx >= 0) allLogs[idx] = n; else allLogs.push(n);
+          dbPut(n);
+        }
+        renderCurrentTab();
       } else if (eventType === 'DELETE') {
+        // Hard delete (ex: reset complet de la famille via resetCurrentProfile)
         if (pendingDeletes.has(o.id)) return;
         allLogs = allLogs.filter(l => l.id !== o.id); dbDel(o.id); renderCurrentTab();
       }

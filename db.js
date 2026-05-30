@@ -69,7 +69,7 @@ function dbGetAll() {
     if (familyId) {
       // Fast path: index lookup — only deserialises matching records.
       const req = store.index('by_family').getAll(familyId);
-      req.onsuccess = () => res(req.result || []);
+      req.onsuccess = () => res((req.result || []).filter(l => !l.deleted));
       req.onerror   = () => rej(req.error);
     } else {
       // Profile path: indexed query + legacy fallback merged in one tx.
@@ -78,7 +78,10 @@ function dbGetAll() {
       const done = err => { if (err) rej(err); else if (--pending === 0) res(results); };
 
       const r1 = store.index('by_profile').getAll(activeProfileId);
-      r1.onsuccess = () => { results.push(...(r1.result || [])); done(); };
+      r1.onsuccess = () => {
+        results.push(...(r1.result || []).filter(l => !l.deleted));
+        done();
+      };
       r1.onerror   = () => done(r1.error);
 
       // Legacy logs (pre-profile era): no family_id, no profile_id.
@@ -86,7 +89,7 @@ function dbGetAll() {
       const r2 = store.getAll();
       r2.onsuccess = () => {
         (r2.result || [])
-          .filter(l => !l.family_id && !l.profile_id)
+          .filter(l => !l.family_id && !l.profile_id && !l.deleted)
           .forEach(l => results.push(l));
         done();
       };

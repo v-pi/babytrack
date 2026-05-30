@@ -115,18 +115,23 @@ async function updateLogAction(log) {
 }
 
 async function deleteLogAction(id) {
+  // Soft delete : on retire de l'UI et d'IDB immédiatement,
+  // mais on marque deleted=true dans Supabase plutôt que de supprimer la ligne.
+  // Ainsi le delta sync des autres appareils capte le changement via updated_at.
   allLogs = allLogs.filter(l => l.id !== id);
   renderCurrentTab();
   await dbDel(id);
 
-  pendingDeletes.add(id); 
-  pendingSyncIds.delete(id);
+  // On réutilise pendingSyncIds (pas pendingDeletes) car c'est un upsert, pas un DELETE.
+  pendingSyncIds.add(id);
   saveSyncQueues();
 
   if (supabaseClient && navigator.onLine && familyId) {
     setSyncDot('syncing');
-    const { error } = await supabaseClient.from('logs').delete().eq('id', id);
-    if (!error) { pendingDeletes.delete(id); saveSyncQueues(); setSyncDot('ok'); setTimeout(() => setSyncDot(''), 2000); }
+    const { error } = await supabaseClient.from('logs')
+      .update({ deleted: true, updated_at: new Date().toISOString() })
+      .eq('id', id);
+    if (!error) { pendingSyncIds.delete(id); saveSyncQueues(); setSyncDot('ok'); setTimeout(() => setSyncDot(''), 2000); }
     else setSyncDot('error');
   }
 }
