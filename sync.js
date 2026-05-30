@@ -74,6 +74,43 @@ async function initSupabase() {
   setupRealtime();
 }
 
+// ── PAGINATED LOG FETCH ──────────────────────────────────────────────────────
+/**
+ * Fetch all logs matching a given `updated_at` threshold, paginating by 1000
+ * to never silently truncate.
+ *
+ * @param {string}  since        - ISO timestamp, e.g. '1970-01-01T00:00:00Z'
+ * @param {boolean} excludeDeleted - true for initial sync (skip soft-deleted rows),
+ *                                   false for delta sync (include them to propagate)
+ * @returns {Array} flat array of all matching log rows
+ */
+async function fetchLogsPaginated(since, excludeDeleted) {
+  const PAGE = 1000;
+  let from = 0;
+  const all = [];
+
+  while (true) {
+    let q = supabaseClient
+      .from('logs').select('*')
+      .eq('family_id', familyId)
+      .gte('updated_at', since)
+      .order('updated_at', { ascending: true })
+      .range(from, from + PAGE - 1);
+
+    if (excludeDeleted) q = q.eq('deleted', false);
+
+    const { data, error } = await q;
+    if (error) throw error;
+    if (!data || data.length === 0) break;
+
+    all.push(...data);
+    if (data.length < PAGE) break; // dernière page — pas la peine d'en demander une autre
+    from += PAGE;
+  }
+
+  return all;
+}
+
 // ── FULL SYNC ────────────────────────────────────────────────────────────────
 async function syncWithRemote() {
   if (!navigator.onLine || !supabaseClient || !familyId) return;
@@ -104,40 +141,30 @@ async function syncWithRemote() {
 
     let uiChanged = false;
 
-    // 5. Delta Sync — récupère uniquement ce qui a changé depuis la dernière synchro.
+    // 5. Delta Sync — récupère tout ce qui a changé depuis la dernière synchro,
+    // en paginant par tranches de 1000 pour ne jamais tronquer silencieusement.
     const syncKey = 'bt_last_sync_' + familyId;
     const isInitialSync = allLogs.length === 0;
-    const lastSync = !isInitialSync ? (localStorage.getItem(syncKey) || '1970-01-01T00:00:00Z') : '1970-01-01T00:00:00Z';
+    const lastSync = isInitialSync
+      ? '1970-01-01T00:00:00Z'
+      : (localStorage.getItem(syncKey) || '1970-01-01T00:00:00Z');
 
-    let query = supabaseClient
-      .from('logs').select('*')
-      .eq('family_id', familyId)
-      .gte('updated_at', lastSync);
+    const recentData = await fetchLogsPaginated(lastSync, isInitialSync);
 
-    // Synchro initiale : on ne charge que les lignes actives.
-    // Delta sync : on veut aussi les deleted=true pour les propager localement.
-    if (isInitialSync) query = query.eq('deleted', false);
-
-    const { data: recentData, error } = await query;
-      
-    if (error) throw error;
-
-    if (recentData && recentData.length > 0) {
-      for (const sLog of recentData) {
-        const idx = allLogs.findIndex(l => l.id === sLog.id);
-        // Eviter d'écraser une modif locale non encore envoyée (Race condition fix)
-        if (!pendingSyncIds.has(sLog.id) && !pendingDeletes.has(sLog.id)) {
-          if (sLog.deleted) {
-            // Soft delete distant : retirer de l'UI et d'IDB
-            if (idx >= 0) allLogs = allLogs.filter(l => l.id !== sLog.id);
-            await dbDel(sLog.id);
-          } else {
-            if (idx >= 0) allLogs[idx] = sLog;
-            else allLogs.push(sLog);
-            await dbPut(sLog);
-          }
-          uiChanged = true;
+    for (const sLog of recentData) {
+      const idx = allLogs.findIndex(l => l.id === sLog.id);
+      // Éviter d'écraser une modif locale non encore envoyée (race condition)
+      if (!pendingSyncIds.has(sLog.id) && !pendingDeletes.has(sLog.id)) {
+        if (sLog.deleted) {
+          // Soft delete distant : retirer de l'UI et d'IDB
+          if (idx >= 0) allLogs = allLogs.filter(l => l.id !== sLog.id);
+          await dbDel(sLog.id);
+        } else {
+          if (idx >= 0) allLogs[idx] = sLog;
+          else allLogs.push(sLog);
+          await dbPut(sLog);
         }
+        uiChanged = true;
       }
     }
     
