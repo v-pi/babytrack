@@ -476,7 +476,14 @@ async function createFamily() {
  */
 async function createInviteCode() {
   if (!supabaseClient || !familyId) return null;
-
+  // Guard : si le JWT n'a pas encore family_id (race avec initSupabase),
+  // on force le updateUser avant d'écrire.
+  try {
+    const { data: { user } } = await supabaseClient.auth.getUser();
+    if (user?.user_metadata?.family_id !== familyId) {
+      await supabaseClient.auth.updateUser({ data: { family_id: familyId } });
+    }
+  } catch (_) {}
   // Generate 7 chars from INVITE_ALPHABET using rejection sampling to
   // avoid modulo bias (31 doesn't divide 256 evenly).
   const raw = (() => {

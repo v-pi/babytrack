@@ -460,8 +460,12 @@ async function _generateAndDisplayCode() {
 
   // QR code embeds the short code (not the UUID) so the URL never leaks the secret
   const url = window.location.origin + window.location.pathname + '?invite=' + result.raw;
-  document.getElementById('qr-code').src =
-    `https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(url)}`;
+  const img = document.getElementById('qr-code');
+  img.src = `https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(url)}`;
+  img.onerror = () => {
+    img.hidden = true;
+    showToast('QR code indisponible, utilisez le code texte');
+  };
 
   // Live countdown
   const expiresAt = new Date(result.expiresAt).getTime();

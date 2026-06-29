@@ -52,30 +52,30 @@ ALTER TABLE public.active_timers ENABLE ROW LEVEL SECURITY;
 -- Autorise toutes les opérations (SELECT, INSERT, UPDATE, DELETE) 
 -- UNIQUEMENT SI le code JS envoie le bon header HTTP
 CREATE POLICY "Families policy" ON public.families
-  FOR ALL USING (
+  FOR ALL TO authenticated USING (
     id::text = current_setting('request.headers', true)::json->>'x-family-id'
-    OR id::text = auth.jwt()->'user_metadata'->>'family_id'
+    OR id::text = auth.jwt()->'app_metadata'->>'family_id'
   ) WITH CHECK (
     id::text = current_setting('request.headers', true)::json->>'x-family-id'
-    OR id::text = auth.jwt()->'user_metadata'->>'family_id'
+    OR id::text = auth.jwt()->'app_metadata'->>'family_id'
   );
 
 CREATE POLICY "Logs policy" ON public.logs 
-  FOR ALL USING (
+  FOR ALL TO authenticated USING (
     family_id::text = current_setting('request.headers', true)::json->>'x-family-id'
-    OR family_id::text = auth.jwt()->'user_metadata'->>'family_id'
+    OR family_id::text = auth.jwt()->'app_metadata'->>'family_id'
   ) WITH CHECK (
     family_id::text = current_setting('request.headers', true)::json->>'x-family-id'
-    OR family_id::text = auth.jwt()->'user_metadata'->>'family_id'
+    OR family_id::text = auth.jwt()->'app_metadata'->>'family_id'
   );
 
 CREATE POLICY "Timers policy" ON public.active_timers 
-  FOR ALL USING (
+  FOR ALL TO authenticated USING (
     family_id::text = current_setting('request.headers', true)::json->>'x-family-id'
-    OR family_id::text = auth.jwt()->'user_metadata'->>'family_id'
+    OR family_id::text = auth.jwt()->'app_metadata'->>'family_id'
   ) WITH CHECK (
     family_id::text = current_setting('request.headers', true)::json->>'x-family-id'
-    OR family_id::text = auth.jwt()->'user_metadata'->>'family_id'
+    OR family_id::text = auth.jwt()->'app_metadata'->>'family_id'
   );
   
   
@@ -96,12 +96,16 @@ ALTER TABLE public.invite_codes ENABLE ROW LEVEL SECURITY;
 
 -- INSERT: only for your own family
 CREATE POLICY "invite_codes_insert" ON public.invite_codes
-  FOR INSERT WITH CHECK (family_id::text = auth.jwt()->'user_metadata'->>'family_id');
+  FOR INSERT TO authenticated
+  WITH CHECK (
+    family_id::text = current_setting('request.headers', true)::json->>'x-family-id'
+    OR family_id::text = auth.jwt()->'app_metadata'->>'family_id'
+  );
 
 -- SELECT: only if caller sends the exact code as x-invite-code header + not expired.
 -- Without this header a full table scan returns 0 rows — no enumeration possible.
 CREATE POLICY "invite_codes_select" ON public.invite_codes
-  FOR SELECT USING (
+  FOR SELECT TO authenticated USING (
     code = current_setting('request.headers', true)::json->>'x-invite-code'
     AND expires_at > now()
   );
@@ -111,12 +115,6 @@ CREATE POLICY "invite_codes_select" ON public.invite_codes
 CREATE TRIGGER shadow_ban_invite_codes_trigger
 BEFORE INSERT OR UPDATE OR DELETE ON public.invite_codes
 FOR EACH ROW EXECUTE FUNCTION public.check_and_apply_shadow_ban();
-
-ALTER POLICY "Families policy" ON public.families TO authenticated;
-ALTER POLICY "Logs policy" ON public.logs TO authenticated;
-ALTER POLICY "Timers policy" ON public.active_timers TO authenticated;
-ALTER POLICY "invite_codes_insert" ON public.invite_codes TO authenticated;
-ALTER POLICY "invite_codes_select" ON public.invite_codes TO authenticated;
 
 
 ALTER PUBLICATION supabase_realtime ADD TABLE public.families;
