@@ -139,9 +139,14 @@ function renderTimeline() {
   const c = document.getElementById('timeline-container');
   const navEl = document.getElementById('tl-day-nav');
   const byDay = {};
+  const dayStartByKey = {}; // toDateString() key → midnight timestamp for that day
   allLogs.forEach(l => {
-    const k = new Date(l.timestamp || l.start).toDateString();
-    if (!byDay[k]) byDay[k] = [];
+    const d = new Date(l.timestamp || l.start);
+    const k = d.toDateString();
+    if (!byDay[k]) {
+      byDay[k] = [];
+      dayStartByKey[k] = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+    }
     byDay[k].push(l);
   });
   tlDays = Object.keys(byDay).sort((a,b) => new Date(b) - new Date(a));
@@ -153,9 +158,24 @@ function renderTimeline() {
   tlDayIndex = Math.max(0, Math.min(tlDayIndex, tlDays.length - 1));
   if (navEl) navEl.innerHTML = renderDayNav('timeline', tlDayIndex, tlDays);
 
-  const logs = byDay[tlDays[tlDayIndex]];
-  const pct  = ts => +((new Date(ts).getHours()*3600+new Date(ts).getMinutes()*60+new Date(ts).getSeconds())*1000/86400000*100).toFixed(3);
-  const dpct = ms => Math.max(0.8, +(ms/86400000*100).toFixed(3));
+  const logs     = byDay[tlDays[tlDayIndex]];
+  const dayStart = dayStartByKey[tlDays[tlDayIndex]];
+  const dayEnd   = dayStart + 86400000;
+
+  // Position a single point-in-time within the visible day (0–100%), clamped to the day.
+  const pct = ts => +((Math.min(Math.max(ts, dayStart), dayEnd) - dayStart) / 86400000 * 100).toFixed(3);
+
+  // Position + width of a [start, start+duration] span, clipped to the visible day's
+  // midnight-to-midnight window. A feed/sleep that crosses midnight is truncated at the
+  // edge of whichever day it's shown on, instead of overflowing the track.
+  const barStyle = l => {
+    const s = Math.max(l.start, dayStart);
+    const e = Math.min(l.start + l.duration, dayEnd);
+    const left  = +((s - dayStart) / 86400000 * 100).toFixed(3);
+    const width = Math.max(0.8, +(Math.max(e - s, 0) / 86400000 * 100).toFixed(3));
+    return 'left:' + left + '%;width:' + width + '%';
+  };
+
   const ticksHtml = [0,6,12,18,24].map(h =>
     '<div class="tl-tick" style="left:' + (h/24*100).toFixed(1) + '%"><div class="tl-tick-line"></div><div class="tl-tick-lbl">' + String(h).padStart(2,'0') + 'h</div></div>'
   ).join('');
@@ -164,8 +184,8 @@ function renderTimeline() {
   const dl = logs.filter(l => l.type === 'diaper');
   c.innerHTML = '<div class="timeline-day"><div class="tl-body" style="padding-top:20px">' +
     '<div class="tl-ticks-row"><div class="tl-tick-spacer"></div><div class="tl-ticks">' + ticksHtml + '</div></div>' +
-    (fl.length ? '<div class="tl-row"><div class="tl-row-label">🤱</div><div class="tl-track feed-track">' + fl.map(l=>'<div class="tl-bar ' + escapeHtml(l.side) + '" style="left:' + pct(l.start) + '%;width:' + dpct(l.duration) + '%"></div>').join('') + '</div></div>' : '') +
-    (sl.length ? '<div class="tl-row"><div class="tl-row-label">🌙</div><div class="tl-track sleep-track">' + sl.map(l=>'<div class="tl-bar sleep" style="left:' + pct(l.start) + '%;width:' + dpct(l.duration) + '%"></div>').join('') + '</div></div>' : '') +
+    (fl.length ? '<div class="tl-row"><div class="tl-row-label">🤱</div><div class="tl-track feed-track">' + fl.map(l=>'<div class="tl-bar ' + escapeHtml(l.side) + '" style="' + barStyle(l) + '"></div>').join('') + '</div></div>' : '') +
+    (sl.length ? '<div class="tl-row"><div class="tl-row-label">🌙</div><div class="tl-track sleep-track">' + sl.map(l=>'<div class="tl-bar sleep" style="' + barStyle(l) + '"></div>').join('') + '</div></div>' : '') +
     (dl.length ? '<div class="tl-row"><div class="tl-row-label">💧</div><div class="tl-track diaper-track">' + dl.map(l=>'<div class="tl-dot ' + escapeHtml(l.diaperType) + '" style="left:' + pct(l.timestamp) + '%"></div>').join('') + '</div></div>' : '') +
     '</div></div>';
 }
