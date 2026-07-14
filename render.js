@@ -272,6 +272,70 @@ function buildBarSVG(data, { yMax, yUnit, N, hasMixed }) {
   return svg;
 }
 
+/**
+ * Simple line chart — same grid/axis/label conventions as buildBarSVG,
+ * for metrics best read as a trend (e.g. count per day) rather than stacked totals.
+ */
+function buildLineSVG(data, { yMax, yUnit, N, color }) {
+  const W = 340, H = 130;
+  const padL = 30, padR = 4, padT = 8, padB = 22;
+  const plotW = W - padL - padR;
+  const plotH = H - padT - padB;
+  const ticks = 4;
+  const tickStep = yMax / ticks;
+
+  let svg = `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" style="width:100%;display:block">`;
+
+  // Grid lines + Y labels
+  for (let i = 0; i <= ticks; i++) {
+    const val = tickStep * i;
+    const y = +(padT + plotH - (val / yMax) * plotH).toFixed(1);
+    svg += `<line x1="${padL}" y1="${y}" x2="${W - padR}" y2="${y}" stroke="var(--border)" stroke-width="0.6"/>`;
+    let lbl;
+    if (val === 0) lbl = '0';
+    else if (isFloat(val)) lbl = val.toFixed(1) + (i === ticks && yUnit ? yUnit : '');
+    else lbl = Math.round(val) + (i === ticks && yUnit ? yUnit : '');
+    svg += `<text x="${padL - 3}" y="${y + 3}" text-anchor="end" font-size="7" fill="var(--text-muted)" font-family="-apple-system,sans-serif">${lbl}</text>`;
+  }
+
+  // Points along the plot, evenly spaced across the N days
+  const stepX = N > 1 ? plotW / (N - 1) : 0;
+  const pts = data.map((val, i) => ({
+    x: +(padL + i * stepX).toFixed(2),
+    y: +(padT + plotH - (Math.min(val, yMax) / yMax) * plotH).toFixed(2),
+    val
+  }));
+
+  // Soft area fill under the line
+  const areaPath = `M${pts[0].x},${(padT + plotH).toFixed(2)} ` +
+    pts.map(p => `L${p.x},${p.y}`).join(' ') +
+    ` L${pts[pts.length - 1].x},${(padT + plotH).toFixed(2)} Z`;
+  svg += `<path d="${areaPath}" fill="${color}" fill-opacity="0.08"/>`;
+
+  // Line
+  const linePath = 'M' + pts.map(p => `${p.x},${p.y}`).join(' L');
+  svg += `<path d="${linePath}" fill="none" stroke="${color}" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/>`;
+
+  // Dots on days with at least one entry
+  pts.forEach(p => {
+    if (p.val > 0) svg += `<circle cx="${p.x}" cy="${p.y}" r="1.6" fill="${color}"/>`;
+  });
+
+  // X labels: first, last, every 7th (same convention as the bar chart)
+  const today = new Date();
+  pts.forEach((p, i) => {
+    if (i === 0 || i === N - 1 || (i % 7 === 0 && (N - 1 - i) > 4)) {
+      const d = new Date(today);
+      d.setDate(today.getDate() - (N - 1 - i));
+      const lbl = String(d.getDate()).padStart(2, '0') + '/' + String(d.getMonth() + 1).padStart(2, '0');
+      svg += `<text x="${p.x}" y="${H - 3}" text-anchor="middle" font-size="7" fill="var(--text-muted)" font-family="-apple-system,sans-serif">${lbl}</text>`;
+    }
+  });
+
+  svg += '</svg>';
+  return svg;
+}
+
 function isFloat(n) { return n % 1 !== 0; }
 
 function buildChartCard(title, legend, svgContent) {
@@ -305,7 +369,7 @@ function renderStats() {
   const cutoffTs = today.getTime() - N * 86400000;
   const statsMap = {};
   days.forEach(dk => {
-    statsMap[dk] = { feedLeft: 0, feedRight: 0, sleepMs: 0, wet: 0, dirty: 0, mixed: 0, bottleVol: 0 };
+    statsMap[dk] = { feedLeft: 0, feedRight: 0, feedCount: 0, sleepMs: 0, wet: 0, dirty: 0, mixed: 0, bottleVol: 0 };
   });
 
   allLogs.forEach(l => {
@@ -317,6 +381,7 @@ function renderStats() {
     if (l.type === 'feed') {
       if (l.side === 'left')  bucket.feedLeft  += (l.duration || 0);
       else                    bucket.feedRight += (l.duration || 0);
+      bucket.feedCount++;
     } else if (l.type === 'sleep') {
       bucket.sleepMs += (l.duration || 0);
     } else if (l.type === 'diaper') {
@@ -330,6 +395,7 @@ function renderStats() {
 
   const feedLeftMin  = days.map(dk => statsMap[dk].feedLeft  / 60000);
   const feedRightMin = days.map(dk => statsMap[dk].feedRight / 60000);
+  const feedCountArr = days.map(dk => statsMap[dk].feedCount);
   const sleepH       = days.map(dk => statsMap[dk].sleepMs   / 3600000);
   const dWet         = days.map(dk => statsMap[dk].wet);
   const dDirty       = days.map(dk => statsMap[dk].dirty);
@@ -342,6 +408,9 @@ function renderStats() {
     { val: feedRightMin[i], fill: 'var(--blue)' }
   ]}));
   const feedMax = niceMax(Math.max(...feedData.map(d => d.segments.reduce((a, s) => a + s.val, 0))));
+
+  // ── Feed count chart (line) ─────────────────────────────────────────────────
+  const feedCountMax = niceMax(Math.max(...feedCountArr));
 
   // ── Bottle chart ──────────────────────────────────────────────────────────
   const bottleData = days.map((_, i) => ({ segments: [
@@ -372,6 +441,10 @@ function renderStats() {
       { dotStyle: 'background:var(--pink)',  label: 'Gauche' },
       { dotStyle: 'background:var(--blue)',  label: 'Droit'  }
     ], buildBarSVG(feedData, { yMax: feedMax, yUnit: 'min', N })) +
+
+    buildChartCard('🤱 Nombre de tétées — 30 derniers jours', [
+      { dotStyle: 'background:var(--pink)', label: 'Tétées / jour' }
+    ], buildLineSVG(feedCountArr, { yMax: feedCountMax, yUnit: '', N, color: 'var(--pink)' })) +
 
     buildChartCard('🍼 Biberon — 30 derniers jours', [
       { dotStyle: 'background:var(--teal)', label: 'Volume total' }
