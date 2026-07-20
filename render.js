@@ -238,15 +238,30 @@ function niceMax(val, isFloat) {
   return steps.find(v => v >= val * 1.15) || Math.ceil(val * 1.2);
 }
 
+// Picks a sensible spacing between X-axis date labels depending on the
+// chosen range, so a long custom window (90/180/365 days) doesn't cram in
+// far more labels than a 340px-wide chart can legibly show.
+function xLabelInterval(N) {
+  if (N <= 14)  return 1;
+  if (N <= 60)  return 7;
+  if (N <= 120) return 14;
+  return 30;
+}
+
 function buildBarSVG(data, { yMax, yUnit, N, hasMixed }) {
   const W = 340, H = 130;
   const padL = 30, padR = 4, padT = 8, padB = 22;
   const plotW = W - padL - padR;
   const plotH = H - padT - padB;
-  const gap = 1.5;
-  const barW = (plotW - gap * (N - 1)) / N;
+  // Adaptive gap: with a large custom range (e.g. 200+ days) a fixed 1.5px gap
+  // between every bar would exceed the available width and produce negative
+  // bar widths. Cap the gap to a fraction of each day's slot instead.
+  const slotW = plotW / N;
+  const gap = Math.min(1.5, slotW * 0.25);
+  const barW = Math.max(slotW - gap, 0.35);
   const ticks = 4;
   const tickStep = yMax / ticks;
+  const xStep = xLabelInterval(N);
 
   let defs = hasMixed
     ? `<defs><linearGradient id="mix-grad" x1="0" y1="0" x2="1" y2="1">
@@ -271,7 +286,7 @@ function buildBarSVG(data, { yMax, yUnit, N, hasMixed }) {
   // Bars
   const today = new Date();
   data.forEach((item, i) => {
-    const x = +(padL + i * (barW + gap)).toFixed(2);
+    const x = +(padL + i * slotW).toFixed(2);
     let yBase = padT + plotH;
     item.segments.forEach(seg => {
       if (seg.val <= 0) return;
@@ -279,8 +294,8 @@ function buildBarSVG(data, { yMax, yUnit, N, hasMixed }) {
       yBase -= h;
       svg += `<rect x="${x}" y="${yBase.toFixed(2)}" width="${Math.max(barW, 1).toFixed(2)}" height="${h.toFixed(2)}" fill="${seg.fill}" rx="1.5"/>`;
     });
-	// X label: first, last, every 7th (but don't draw the 7th if it's too close to the end)
-    if (i === 0 || i === N - 1 || (i % 7 === 0 && (N - 1 - i) > 4)) {
+	// X label: first, last, every Nth (but don't draw it if too close to the end)
+    if (i === 0 || i === N - 1 || (i % xStep === 0 && (N - 1 - i) > xStep * 0.5)) {
       const d = new Date(today);
       d.setDate(today.getDate() - (N - 1 - i));
       const lbl = String(d.getDate()).padStart(2, '0') + '/' + String(d.getMonth() + 1).padStart(2, '0');
@@ -341,10 +356,11 @@ function buildLineSVG(data, { yMax, yUnit, N, color }) {
     if (p.val > 0) svg += `<circle cx="${p.x}" cy="${p.y}" r="1.6" fill="${color}"/>`;
   });
 
-  // X labels: first, last, every 7th (same convention as the bar chart)
+  // X labels: first, last, every Nth (same adaptive convention as the bar chart)
   const today = new Date();
+  const xStep = xLabelInterval(N);
   pts.forEach((p, i) => {
-    if (i === 0 || i === N - 1 || (i % 7 === 0 && (N - 1 - i) > 4)) {
+    if (i === 0 || i === N - 1 || (i % xStep === 0 && (N - 1 - i) > xStep * 0.5)) {
       const d = new Date(today);
       d.setDate(today.getDate() - (N - 1 - i));
       const lbl = String(d.getDate()).padStart(2, '0') + '/' + String(d.getMonth() + 1).padStart(2, '0');
@@ -357,6 +373,27 @@ function buildLineSVG(data, { yMax, yUnit, N, color }) {
 }
 
 function isFloat(n) { return n % 1 !== 0; }
+
+// ── STATS RANGE SELECTOR ──────────────────────────────────────────────────────
+function buildStatsRangeSelector(N) {
+  const presets  = [7, 14, 30, 60, 90];
+  const isCustom = !presets.includes(N);
+  const pills = presets.map(d =>
+    `<button class="range-btn${d === N ? ' active' : ''}" onclick="setStatsRange(${d})">${d}j</button>`
+  ).join('');
+  return `<div class="stats-range">
+    ${pills}
+    <button class="range-btn range-btn--custom${isCustom ? ' active' : ''}" onclick="toggleStatsRangeCustom()" title="Durée personnalisée">
+      ${isCustom ? N + 'j' : '✎ Autre'}
+    </button>
+    <div class="stats-range-custom" id="stats-range-custom">
+      <input type="number" id="stats-range-custom-input" min="2" max="365" step="1"
+             inputmode="numeric" placeholder="Jours" value="${N}"
+             onkeydown="if(event.key==='Enter')applyCustomStatsRange()"/>
+      <button class="range-btn range-btn--ok" onclick="applyCustomStatsRange()">OK</button>
+    </div>
+  </div>`;
+}
 
 function buildChartCard(title, legend, svgContent) {
   const legendHtml = legend.map(l =>
@@ -375,7 +412,7 @@ function renderStats() {
   const el = document.getElementById('stats-container');
   if (!el) return;
 
-  const N = 30;
+  const N = statsRangeDays;
   const today = new Date();
   const days = [];
   for (let i = N - 1; i >= 0; i--) {
@@ -397,7 +434,7 @@ function renderStats() {
     if (!ts || ts < cutoffTs) return;          // skip logs outside the window
     const dk = new Date(ts).toDateString();
     const bucket = statsMap[dk];
-    if (!bucket) return;                       // day not in our 30-day window
+    if (!bucket) return;                       // day not in our N-day window
     if (l.type === 'feed') {
       if (l.side === 'left')  bucket.feedLeft  += (l.duration || 0);
       else                    bucket.feedRight += (l.duration || 0);
@@ -453,39 +490,42 @@ function renderStats() {
   const diaperMax = niceMax(Math.max(...diaperData.map(d => d.segments.reduce((a, s) => a + s.val, 0))));
 
   // ── Heatmap logs ──────────────────────────────────────────────────────────
-  const feedLogs30  = allLogs.filter(l => l.type === 'feed'  && (l.start || 0) >= cutoffTs);
-  const sleepLogs30 = allLogs.filter(l => l.type === 'sleep' && (l.start || 0) >= cutoffTs);
+  const feedLogsN  = allLogs.filter(l => l.type === 'feed'  && (l.start || 0) >= cutoffTs);
+  const sleepLogsN = allLogs.filter(l => l.type === 'sleep' && (l.start || 0) >= cutoffTs);
+  const rangeLabel = `${N} derniers jours`;
 
   el.innerHTML =
-    buildChartCard('🤱 Allaitement — 30 derniers jours', [
+    buildStatsRangeSelector(N) +
+
+    buildChartCard(`🤱 Allaitement — ${rangeLabel}`, [
       { dotStyle: 'background:var(--pink)',  label: 'Gauche' },
       { dotStyle: 'background:var(--blue)',  label: 'Droit'  }
     ], buildBarSVG(feedData, { yMax: feedMax, yUnit: 'min', N })) +
 
-    buildChartCard('🤱 Nombre de tétées — 30 derniers jours', [
+    buildChartCard(`🤱 Nombre de tétées — ${rangeLabel}`, [
       { dotStyle: 'background:var(--pink)', label: 'Tétées / jour' }
     ], buildLineSVG(feedCountArr, { yMax: feedCountMax, yUnit: '', N, color: 'var(--pink)' })) +
 
-    buildChartCard('🍼 Biberon — 30 derniers jours', [
+    buildChartCard(`🍼 Biberon — ${rangeLabel}`, [
       { dotStyle: 'background:var(--teal)', label: 'Volume total' }
     ], buildBarSVG(bottleData, { yMax: bottleMax, yUnit: 'ml', N })) +
 
-    buildChartCard('🌙 Sommeil — 30 derniers jours', [
+    buildChartCard(`🌙 Sommeil — ${rangeLabel}`, [
       { dotStyle: 'background:var(--green)', label: 'Durée totale' }
     ], buildBarSVG(sleepData, { yMax: sleepMax, yUnit: 'h', N })) +
 
-    buildChartCard('💧 Couches — 30 derniers jours', [
+    buildChartCard(`💧 Couches — ${rangeLabel}`, [
       { dotStyle: 'background:var(--blue)',  label: 'Pipi'  },
       { dotStyle: 'background:var(--amber)', label: 'Selle' },
       { dotStyle: 'background:linear-gradient(135deg,var(--blue) 50%,var(--amber) 50%)', label: 'Mixte' }
     ], buildBarSVG(diaperData, { yMax: diaperMax, yUnit: '', N, hasMixed: true })) +
 
-    buildChartCard('🔮 Rythme typique des tétées', [], buildRhythmHeatmapSVG(feedLogs30, N, {
+    buildChartCard('🔮 Rythme typique des tétées', [], buildRhythmHeatmapSVG(feedLogsN, N, {
       color: '#8b5cf6', alpha: 0.07, minPx: 4, useDuration: true,
       caption: (n, d) => `${n} tétées sur ${d} jour${d > 1 ? 's' : ''} — plus c'est dense, plus c'est habituel`
     })) +
 
-    buildChartCard('🌙 Rythme typique du sommeil', [], buildRhythmHeatmapSVG(sleepLogs30, N, {
+    buildChartCard('🌙 Rythme typique du sommeil', [], buildRhythmHeatmapSVG(sleepLogsN, N, {
       color: '#4caf82', alpha: 0.10, minPx: 8, useDuration: true,
       caption: (n, d) => `${n} siestes/nuits sur ${d} jour${d > 1 ? 's' : ''} — les plages sombres = moments habituels`
     }));
@@ -526,7 +566,7 @@ function buildRhythmHeatmapSVG(logs, N, { color, alpha, minPx, useDuration, capt
   const nDays = Math.min(N, new Set(logs.map(l => new Date(l.start).toDateString())).size);
   const cap = logs.length
     ? `<div class="stats-heatmap-caption">${caption(logs.length, nDays)}</div>`
-    : `<div class="stats-heatmap-caption empty">Aucune donnée sur 30 jours</div>`;
+    : `<div class="stats-heatmap-caption empty">Aucune donnée sur ${N} jour${N > 1 ? 's' : ''}</div>`;
 
   return svg + cap;
 }

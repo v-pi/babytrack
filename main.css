@@ -430,6 +430,29 @@ body{
 .tab svg{width:18px;height:18px}
 
 /* ── STATS ── */
+.stats-range{
+  display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:14px;
+}
+.range-btn{
+  border:1.5px solid var(--border);border-radius:20px;
+  padding:6px 12px;font-size:12px;font-weight:600;
+  color:var(--text-muted);background:var(--card);cursor:pointer;
+  transition:all .15s;
+}
+.range-btn.active{background:var(--pink);color:#fff;border-color:var(--pink)}
+.range-btn--custom{font-size:12px}
+.stats-range-custom{
+  display:none;align-items:center;gap:6px;width:100%;margin-top:2px;
+}
+.stats-range-custom.shown{display:flex}
+.stats-range-custom input{
+  width:76px;border:1.5px solid var(--border);border-radius:10px;
+  padding:6px 8px;font-size:13px;background:var(--card);color:var(--text);
+}
+.stats-range-custom input::-webkit-outer-spin-button,
+.stats-range-custom input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+.stats-range-custom input:focus{outline:none;border-color:var(--pink)}
+.range-btn--ok{background:var(--pink);color:#fff;border-color:var(--pink);padding:6px 14px}
 .stats-card{margin-bottom:14px}
 .stats-card-header{
   display:flex;align-items:flex-start;justify-content:space-between;

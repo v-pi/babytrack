@@ -24,6 +24,7 @@ let lastBottleVol   = 0;   // default 0, then last entered value
 let toastTO;
 let tlDayIndex = 0, tlDays = [];
 let histDay = { feed: 0, bottle: 0, sleep: 0, diaper: 0 };
+let statsRangeDays = 30; // Fenêtre (en jours) utilisée par les graphs de l'onglet Stats
 const TICK_LAST_FEED   = 'last-feed-global';
 const TICK_LAST_BOTTLE = 'last-bottle-global';
 
@@ -70,6 +71,16 @@ function updateHeaderProfile() {
   const p = getActiveProfile();
   document.getElementById('header-emoji').textContent = p.emoji;
   document.getElementById('header-name').textContent  = p.name;
+}
+
+// ── STATS RANGE (durée des graphs) ────────────────────────────────────────────
+function loadStatsRange() {
+  const v = parseInt(localStorage.getItem('bt_stats_range_days'), 10);
+  statsRangeDays = (Number.isFinite(v) && v >= 2 && v <= 365) ? v : 30;
+}
+
+function saveStatsRange() {
+  localStorage.setItem('bt_stats_range_days', String(statsRangeDays));
 }
 
 // ── SYNC DOT ─────────────────────────────────────────────────────────────────

@@ -48,6 +48,7 @@ window.onload = async () => {
   });
 
   loadProfiles();
+  loadStatsRange();
   updateHeaderProfile();
   familyId = getActiveProfile().familyId;
 
@@ -247,6 +248,38 @@ function stopSleepTimerLocal() {
   renderCurrentTab();
 }
 
+
+// ── STATS RANGE ───────────────────────────────────────────────────────────────
+function setStatsRange(days) {
+  const n = Math.max(2, Math.min(365, Math.round(days)));
+  const wrap = document.getElementById('stats-range-custom');
+  if (wrap) wrap.classList.remove('shown'); // close the custom input if it was open
+  if (n === statsRangeDays) return;
+  statsRangeDays = n;
+  saveStatsRange();
+  renderStats();
+}
+
+function toggleStatsRangeCustom() {
+  const wrap = document.getElementById('stats-range-custom');
+  if (!wrap) return;
+  wrap.classList.toggle('shown');
+  if (wrap.classList.contains('shown')) {
+    const input = document.getElementById('stats-range-custom-input');
+    if (input) { input.value = statsRangeDays; input.focus(); input.select(); }
+  }
+}
+
+function applyCustomStatsRange() {
+  const input = document.getElementById('stats-range-custom-input');
+  if (!input) return;
+  const v = parseInt(input.value, 10);
+  if (!Number.isFinite(v) || v < 2 || v > 365) {
+    showToast('Choisis une durée entre 2 et 365 jours');
+    return;
+  }
+  setStatsRange(v);
+}
 
 // ── COUCHES ───────────────────────────────────────────────────────────────────
 function toggleDiaper(type) {
