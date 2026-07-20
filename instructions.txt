@@ -1,0 +1,1 @@
+Do not update versions manually. A git hook does that automatically already.

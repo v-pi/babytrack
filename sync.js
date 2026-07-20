@@ -363,8 +363,13 @@ function setupRealtime() {
         if (n.type === 'feed') {
           applyRemoteBreastTimer(n.side, n); // handles both paused & running
         } else {
-          // Sleep timer — no pause support yet, simple start
-          activateSleepTimerLocal(toMs(n.start_time));
+          // Sleep timer — no pause support yet, simple start.
+          // Guard against re-applying an echo of our own insert (possible if
+          // the pendingTimers TTL already expired before this event arrived):
+          // skip if local state already matches.
+          const startMs = toMs(n.start_time);
+          if (sleepActive && sleepActive.start === startMs) return;
+          activateSleepTimerLocal(startMs);
         }
       } else if (eventType === 'DELETE') {
         if (!o) return;

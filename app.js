@@ -119,7 +119,22 @@ function restoreTimers() {
   if (sleepActive) activateSleepTimerLocal(sleepActive.start);
 }
 
+// Debounce guard: a real double-tap/ghost-click on mobile can dispatch two
+// 'click' events for what the user experiences as a single tap. Because
+// toggleBreast()/toggleSleep() flip state synchronously, the 2nd call would
+// otherwise see the timer as "already running" and immediately stop it again
+// (or vice-versa) — producing a spurious near-0s log the user has to notice
+// and delete, and a timer that looks like it "started twice".
+let _lastToggleAt = {};
+function debounced(key, ms = 500) {
+  const now = Date.now();
+  if (now - (_lastToggleAt[key] || 0) < ms) return true;
+  _lastToggleAt[key] = now;
+  return false;
+}
+
 function toggleBreast(side) {
+  if (debounced('feed_' + side)) return;
   if (breastActive[side]) {
     const s = breastActive[side];
     const dur = s.accumulated + (s.paused ? 0 : Date.now() - s.start);
@@ -190,6 +205,7 @@ function togglePauseBreast(side) {
 }
 
 function toggleSleep() {
+  if (debounced('sleep')) return;
   if (sleepActive) {
     const dur = Date.now() - sleepActive.start;
     logAction({ type:'sleep', start:sleepActive.start, end:Date.now(), duration:dur, timestamp:Date.now() });
