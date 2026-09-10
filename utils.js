@@ -74,3 +74,23 @@ function combineDateTime(dateStr, timeStr) {
   const [h, min]  = timeStr.split(':').map(Number);
   return new Date(y, m - 1, d, h, min).getTime();
 }
+
+/** Midnight timestamp (ms) for the local day containing `ts` (defaults to now). */
+function startOfDay(ts) {
+  const d = new Date(ts === undefined ? Date.now() : ts);
+  d.setHours(0, 0, 0, 0);
+  return d.getTime();
+}
+
+/** Midnight timestamp (ms) for today. */
+function todayStart() {
+  return startOfDay(Date.now());
+}
+
+/** Add `n` calendar days to a timestamp (DST-safe), returning midnight of the result. */
+function addDays(ts, n) {
+  const d = new Date(ts);
+  d.setDate(d.getDate() + n);
+  d.setHours(0, 0, 0, 0);
+  return d.getTime();
+}

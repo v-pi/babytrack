@@ -13,7 +13,7 @@
   <script>
     (function(){var t=localStorage.getItem('bt_theme');if(t==='dark')document.documentElement.setAttribute('data-theme','dark');})();
   </script>
-  <link rel="stylesheet" href="main.css?v=71"/>
+  <link rel="stylesheet" href="main.css?v=72"/>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>
@@ -68,8 +68,9 @@
       </div>
       <div class="last-feed-global" id="last-feed-global"></div>
     </div>
+    <div id="feed-daynav"></div>
     <div class="summary-row">
-      <div class="summary-chip pink"><div class="s-val" id="sum-feed-count">0</div><div class="s-lab">tétées auj.</div></div>
+      <div class="summary-chip pink"><div class="s-val" id="sum-feed-count">0</div><div class="s-lab">tétées</div></div>
       <div class="summary-chip blue"><div class="s-val" id="sum-feed-total">0 min</div><div class="s-lab">durée totale</div></div>
     </div>
     <div class="section-label">Tout l'historique</div>
@@ -102,8 +103,9 @@
       <button class="bottle-log-btn" onclick="logBottle()">Enregistrer ✓</button>
       <div class="last-feed-global" id="last-bottle-global"></div>
     </div>
+    <div id="bottle-daynav"></div>
     <div class="summary-row">
-      <div class="summary-chip teal"><div class="s-val" id="sum-bottle-count">0</div><div class="s-lab">biberons auj.</div></div>
+      <div class="summary-chip teal"><div class="s-val" id="sum-bottle-count">0</div><div class="s-lab">biberons</div></div>
       <div class="summary-chip blue"><div class="s-val" id="sum-bottle-total">0 ml</div><div class="s-lab">volume total</div></div>
     </div>
     <div class="section-label">Tout l'historique</div>
@@ -125,8 +127,9 @@
         <div class="sleep-timer" id="sleep-timer">--:--</div>
       </button>
     </div>
+    <div id="sleep-daynav"></div>
     <div class="summary-row">
-      <div class="summary-chip green"><div class="s-val" id="sum-sleep-count">0</div><div class="s-lab">siestes auj.</div></div>
+      <div class="summary-chip green"><div class="s-val" id="sum-sleep-count">0</div><div class="s-lab">siestes</div></div>
       <div class="summary-chip blue"><div class="s-val" id="sum-sleep-total">0 min</div><div class="s-lab">sommeil total</div></div>
     </div>
     <div class="section-label">Tout l'historique</div>
@@ -140,18 +143,19 @@
       <div class="diaper-grid">
         <button class="diaper-btn wet" id="btn-diaper-wet" onclick="toggleDiaper('wet')">
           <div class="d-icon">💧</div><div class="d-label">Pipi</div>
-          <div class="d-count" id="diaper-wet-count">0</div>
-          <div class="d-sub">aujourd'hui</div>
         </button>
         <button class="diaper-btn dirty" id="btn-diaper-dirty" onclick="toggleDiaper('dirty')">
           <div class="d-icon">💩</div><div class="d-label">Selle</div>
-          <div class="d-count" id="diaper-dirty-count">0</div>
-          <div class="d-sub">aujourd'hui</div>
         </button>
       </div>
       <button class="diaper-validate" id="diaper-validate" onclick="validateDiaper()">
         Enregistrer ✓
       </button>
+    </div>
+    <div id="diaper-daynav"></div>
+    <div class="summary-row">
+      <div class="summary-chip blue"><div class="s-val" id="diaper-wet-count">0</div><div class="s-lab">pipi</div></div>
+      <div class="summary-chip amber"><div class="s-val" id="diaper-dirty-count">0</div><div class="s-lab">selle</div></div>
     </div>
     <div class="section-label">Tout l'historique</div>
     <div id="diaper-history"></div>
@@ -209,6 +213,20 @@
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="12" width="4" height="9"/><rect x="10" y="7" width="4" height="14"/><rect x="17" y="3" width="4" height="18"/></svg>
     Stats<div class="tab-dot"></div>
   </button>
+</div>
+
+<!-- ── MODAL DATE PICKER (day-nav) ── -->
+<div class="modal-overlay" id="date-modal" onclick="closeDateModal(event)">
+  <div class="modal center">
+    <div class="modal-title modal-title--center">Choisir une date</div>
+    <div class="modal-field">
+      <input type="date" id="date-modal-input" onchange="applyDateModal()"/>
+    </div>
+    <div class="modal-actions modal-actions--flush">
+      <button class="btn btn-cancel" onclick="closeDateModal()">Fermer</button>
+      <button class="btn btn-save" onclick="applyDateModalToday()">📅 Aujourd'hui</button>
+    </div>
+  </div>
 </div>
 
 <!-- ── MODAL EDIT ── -->
@@ -299,11 +317,11 @@
 <div class="toast" id="toast"></div>
 
 <!-- ── SCRIPTS (all at root level, versioned) ── -->
-<script src="utils.js?v=71"></script>
-<script src="db.js?v=71"></script>
-<script src="state.js?v=71"></script>
-<script src="render.js?v=71"></script>
-<script src="sync.js?v=71"></script>
-<script src="app.js?v=71"></script>
+<script src="utils.js?v=72"></script>
+<script src="db.js?v=72"></script>
+<script src="state.js?v=72"></script>
+<script src="render.js?v=72"></script>
+<script src="sync.js?v=72"></script>
+<script src="app.js?v=72"></script>
 </body>
 </html>

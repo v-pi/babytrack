@@ -3,11 +3,6 @@
 // Depends on globals from state.js and helpers from utils.js.
 // ─────────────────────────────────────────────────────────────────────────────
 
-function todayLogs() {
-  const t = new Date().toDateString();
-  return allLogs.filter(l => new Date(l.timestamp || l.start).toDateString() === t);
-}
-
 function startLastFeedTick() {
   stopTick(TICK_LAST_FEED);
   const feedLogs = allLogs.filter(l => l.type === 'feed').sort((a,b) => (b.end||b.timestamp)-(a.end||a.timestamp));
@@ -37,42 +32,41 @@ function startLastBottleTick() {
 }
 
 // ── UNIFIED DAY NAV ───────────────────────────────────────────────────────────
-function getHistDays(logs) {
-  const keys = [...new Set(logs.map(l => new Date(l.timestamp || l.start).toDateString()))];
-  return keys.sort((a, b) => new Date(b) - new Date(a));
-}
-
-function renderDayNav(section, idx, days) {
-  const label = days[idx] === '—' ? '—' : fmtDayLabel(new Date(days[idx]));
+// `dateTs` is the midnight timestamp (ms) of the day currently shown for that
+// section. Defaults to today (see state.js) even when today has no logs yet —
+// in that case the day is simply rendered empty, with counters at 0.
+// Clicking the label opens the date-picker modal (see openDateModal in app.js).
+function renderDayNav(section, dateTs) {
+  const isToday = dateTs === todayStart();
+  const label = fmtDayLabel(new Date(dateTs));
   return '<div class="day-nav">' +
-    '<button class="day-nav-btn" onclick="dayNav(\'' + section + '\',+1)"' + (idx >= days.length - 1 ? ' disabled' : '') + '>&#8249;</button>' +
-    '<span class="day-nav-label">' + label + '</span>' +
-    '<button class="day-nav-btn" onclick="dayNav(\'' + section + '\',-1)"' + (idx <= 0 ? ' disabled' : '') + '>&#8250;</button>' +
+    '<button class="day-nav-btn" onclick="dayNav(\'' + section + '\',+1)" aria-label="Jour précédent">&#8249;</button>' +
+    '<button class="day-nav-label" onclick="openDateModal(\'' + section + '\')">' + label + ' <span class="day-nav-caret">▾</span></button>' +
+    '<button class="day-nav-btn" onclick="dayNav(\'' + section + '\',-1)"' + (isToday ? ' disabled' : '') + ' aria-label="Jour suivant">&#8250;</button>' +
     '</div>';
 }
 
 // ── FEED ─────────────────────────────────────────────────────────────────────
 function renderFeed() {
-  const tl = todayLogs().filter(l => l.type === 'feed');
-  document.getElementById('sum-feed-count').textContent = tl.length;
-  document.getElementById('sum-feed-total').textContent = fmtDur(tl.reduce((a,l) => a+(l.duration||0), 0));
+  const selDate = histDate.feed;
+  document.getElementById('feed-daynav').innerHTML = renderDayNav('feed', selDate);
+
+  const dayLogs = allLogs
+    .filter(l => l.type === 'feed' && startOfDay(l.timestamp || l.start) === selDate)
+    .sort((a, b) => (b.start || b.timestamp) - (a.start || a.timestamp));
+
+  document.getElementById('sum-feed-count').textContent = dayLogs.length;
+  document.getElementById('sum-feed-total').textContent = fmtDur(dayLogs.reduce((a,l) => a+(l.duration||0), 0));
   ['left','right'].forEach(side => {
-    const sl  = tl.filter(l => l.side === side);
+    const sl  = dayLogs.filter(l => l.side === side);
     const el  = document.getElementById('last-'+side);
     if (!sl.length) { el.textContent = ''; return; }
-    const last = sl[sl.length-1];
+    const last = sl[0]; // dayLogs is sorted most-recent-first
     el.textContent = fmtTime(last.start) + ' · ' + fmtDur(last.duration);
   });
-  const el   = document.getElementById('feed-history');
-  const logs = allLogs.filter(l => l.type === 'feed');
-  const days = getHistDays(logs);
-  if (!days.length) { el.innerHTML = '<div class="empty-state">Aucune tétée enregistrée</div>'; startLastFeedTick(); return; }
-  histDay.feed = Math.max(0, Math.min(histDay.feed, days.length - 1));
-  const dayLogs = logs
-    .filter(l => new Date(l.timestamp || l.start).toDateString() === days[histDay.feed])
-    .sort((a, b) => (b.start || b.timestamp) - (a.start || a.timestamp));
-  el.innerHTML = renderDayNav('feed', histDay.feed, days) +
-    '<div class="history-list">' +
+
+  const el = document.getElementById('feed-history');
+  el.innerHTML = '<div class="history-list">' +
     (dayLogs.length ? dayLogs.map(l =>
       '<div class="history-item' + (pendingSyncIds.has(l.id) ? ' pending' : '') + '" data-id="' + escapeHtml(l.id) + '">' +
       '<div class="h-dot ' + escapeHtml(l.side) + '"></div>' +
@@ -86,19 +80,18 @@ function renderFeed() {
 
 // ── SLEEP ─────────────────────────────────────────────────────────────────────
 function renderSleep() {
-  const tl = todayLogs().filter(l => l.type === 'sleep');
-  document.getElementById('sum-sleep-count').textContent = tl.length;
-  document.getElementById('sum-sleep-total').textContent = fmtDur(tl.reduce((a,l) => a+(l.duration||0), 0));
-  const el   = document.getElementById('sleep-history');
-  const logs = allLogs.filter(l => l.type === 'sleep');
-  const days = getHistDays(logs);
-  if (!days.length) { el.innerHTML = '<div class="empty-state">Aucun sommeil enregistré</div>'; return; }
-  histDay.sleep = Math.max(0, Math.min(histDay.sleep, days.length - 1));
-  const dayLogs = logs
-    .filter(l => new Date(l.timestamp || l.start).toDateString() === days[histDay.sleep])
+  const selDate = histDate.sleep;
+  document.getElementById('sleep-daynav').innerHTML = renderDayNav('sleep', selDate);
+
+  const dayLogs = allLogs
+    .filter(l => l.type === 'sleep' && startOfDay(l.timestamp || l.start) === selDate)
     .sort((a, b) => (b.start || b.timestamp) - (a.start || a.timestamp));
-  el.innerHTML = renderDayNav('sleep', histDay.sleep, days) +
-    '<div class="history-list">' +
+
+  document.getElementById('sum-sleep-count').textContent = dayLogs.length;
+  document.getElementById('sum-sleep-total').textContent = fmtDur(dayLogs.reduce((a,l) => a+(l.duration||0), 0));
+
+  const el = document.getElementById('sleep-history');
+  el.innerHTML = '<div class="history-list">' +
     (dayLogs.length ? dayLogs.map(l =>
       '<div class="history-item' + (pendingSyncIds.has(l.id) ? ' pending' : '') + '" data-id="' + escapeHtml(l.id) + '">' +
       '<div class="h-dot sleep"></div>' +
@@ -111,19 +104,18 @@ function renderSleep() {
 
 // ── DIAPERS ───────────────────────────────────────────────────────────────────
 function renderDiapers() {
-  const tl = todayLogs().filter(l => l.type === 'diaper');
-  document.getElementById('diaper-wet-count').textContent   = tl.filter(l => l.diaperType === 'wet'   || l.diaperType === 'mixed').length;
-  document.getElementById('diaper-dirty-count').textContent = tl.filter(l => l.diaperType === 'dirty' || l.diaperType === 'mixed').length;
-  const el   = document.getElementById('diaper-history');
-  const logs = allLogs.filter(l => l.type === 'diaper');
-  const days = getHistDays(logs);
-  if (!days.length) { el.innerHTML = '<div class="empty-state">Aucun changement enregistré</div>'; return; }
-  histDay.diaper = Math.max(0, Math.min(histDay.diaper, days.length - 1));
-  const dayLogs = logs
-    .filter(l => new Date(l.timestamp || l.start).toDateString() === days[histDay.diaper])
+  const selDate = histDate.diaper;
+  document.getElementById('diaper-daynav').innerHTML = renderDayNav('diaper', selDate);
+
+  const dayLogs = allLogs
+    .filter(l => l.type === 'diaper' && startOfDay(l.timestamp || l.start) === selDate)
     .sort((a, b) => b.timestamp - a.timestamp);
-  el.innerHTML = renderDayNav('diaper', histDay.diaper, days) +
-    '<div class="history-list">' +
+
+  document.getElementById('diaper-wet-count').textContent   = dayLogs.filter(l => l.diaperType === 'wet'   || l.diaperType === 'mixed').length;
+  document.getElementById('diaper-dirty-count').textContent = dayLogs.filter(l => l.diaperType === 'dirty' || l.diaperType === 'mixed').length;
+
+  const el = document.getElementById('diaper-history');
+  el.innerHTML = '<div class="history-list">' +
     (dayLogs.length ? dayLogs.map(l =>
       '<div class="history-item' + (pendingSyncIds.has(l.id) ? ' pending' : '') + '" data-id="' + escapeHtml(l.id) + '">' +
       '<div class="h-dot ' + escapeHtml(l.diaperType) + '"></div>' +
@@ -138,29 +130,16 @@ function renderDiapers() {
 function renderTimeline() {
   const c = document.getElementById('timeline-container');
   const navEl = document.getElementById('tl-day-nav');
-  const byDay = {};
-  const dayStartByKey = {}; // toDateString() key → midnight timestamp for that day
-  allLogs.forEach(l => {
-    const d = new Date(l.timestamp || l.start);
-    const k = d.toDateString();
-    if (!byDay[k]) {
-      byDay[k] = [];
-      dayStartByKey[k] = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
-    }
-    byDay[k].push(l);
-  });
-  tlDays = Object.keys(byDay).sort((a,b) => new Date(b) - new Date(a));
-  if (!tlDays.length) {
-    c.innerHTML = '<div class="empty-state">Aucune donnée</div>';
-    if (navEl) navEl.innerHTML = renderDayNav('timeline', 0, ['—']);
+  if (navEl) navEl.innerHTML = renderDayNav('timeline', tlDate);
+
+  const dayStart = tlDate;
+  const dayEnd   = dayStart + 86400000;
+  const logs = allLogs.filter(l => startOfDay(l.timestamp || l.start) === dayStart);
+
+  if (!logs.length) {
+    c.innerHTML = '<div class="empty-state">Aucune donnée ce jour</div>';
     return;
   }
-  tlDayIndex = Math.max(0, Math.min(tlDayIndex, tlDays.length - 1));
-  if (navEl) navEl.innerHTML = renderDayNav('timeline', tlDayIndex, tlDays);
-
-  const logs     = byDay[tlDays[tlDayIndex]];
-  const dayStart = dayStartByKey[tlDays[tlDayIndex]];
-  const dayEnd   = dayStart + 86400000;
 
   // Position a single point-in-time within the visible day (0–100%), clamped to the day.
   const pct = ts => +((Math.min(Math.max(ts, dayStart), dayEnd) - dayStart) / 86400000 * 100).toFixed(3);
@@ -192,20 +171,18 @@ function renderTimeline() {
 
 // ── BOTTLE ────────────────────────────────────────────────────────────────────
 function renderBottle() {
-  const tl = todayLogs().filter(l => l.type === 'bottle');
-  document.getElementById('sum-bottle-count').textContent = tl.length;
-  document.getElementById('sum-bottle-total').textContent = tl.reduce((a, l) => a + (l.volume || 0), 0) + ' ml';
+  const selDate = histDate.bottle;
+  document.getElementById('bottle-daynav').innerHTML = renderDayNav('bottle', selDate);
 
-  const el   = document.getElementById('bottle-history');
-  const logs = allLogs.filter(l => l.type === 'bottle');
-  const days = getHistDays(logs);
-  if (!days.length) { el.innerHTML = '<div class="empty-state">Aucun biberon enregistré</div>'; startLastBottleTick(); return; }
-  histDay.bottle = Math.max(0, Math.min(histDay.bottle || 0, days.length - 1));
-  const dayLogs = logs
-    .filter(l => new Date(l.timestamp).toDateString() === days[histDay.bottle])
+  const dayLogs = allLogs
+    .filter(l => l.type === 'bottle' && startOfDay(l.timestamp) === selDate)
     .sort((a, b) => b.timestamp - a.timestamp);
-  el.innerHTML = renderDayNav('bottle', histDay.bottle, days) +
-    '<div class="history-list">' +
+
+  document.getElementById('sum-bottle-count').textContent = dayLogs.length;
+  document.getElementById('sum-bottle-total').textContent = dayLogs.reduce((a, l) => a + (l.volume || 0), 0) + ' ml';
+
+  const el = document.getElementById('bottle-history');
+  el.innerHTML = '<div class="history-list">' +
     (dayLogs.length ? dayLogs.map(l =>
       '<div class="history-item' + (pendingSyncIds.has(l.id) ? ' pending' : '') + '" data-id="' + escapeHtml(l.id) + '">' +
       '<div class="h-dot bottle"></div>' +

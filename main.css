@@ -159,21 +159,17 @@ body{
 /* ── COUCHES ── */
 .diaper-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 .diaper-btn{
-  border:none;border-radius:var(--radius);padding:16px 10px;cursor:pointer;
-  display:flex;flex-direction:column;align-items:center;gap:5px;transition:transform .1s;
+  border:none;border-radius:var(--radius);padding:20px 10px;cursor:pointer;
+  display:flex;flex-direction:column;align-items:center;gap:7px;transition:transform .1s;
   touch-action:pan-y;
 }
 .diaper-btn:active{transform:scale(.96)}
 .diaper-btn.wet{background:var(--blue-light)}
 .diaper-btn.dirty{background:var(--amber-light)}
-.d-icon{font-size:24px}
-.d-label{font-size:12px;font-weight:600}
+.d-icon{font-size:26px}
+.d-label{font-size:13px;font-weight:600}
 .diaper-btn.wet .d-label{color:var(--blue)}
 .diaper-btn.dirty .d-label{color:var(--amber)}
-.d-count{font-size:22px;font-weight:700}
-.diaper-btn.wet .d-count{color:var(--blue)}
-.diaper-btn.dirty .d-count{color:var(--amber)}
-.d-sub{font-size:11px;color:var(--text-muted)}
 
 
 /* ── COUCHES : toggle + mixte + valider ── */
@@ -207,6 +203,8 @@ body{
 .summary-chip.pink .s-val{color:var(--pink)}
 .summary-chip.blue .s-val{color:var(--blue)}
 .summary-chip.green .s-val{color:var(--green)}
+.summary-chip.amber{background:var(--amber-light)}
+.summary-chip.amber .s-val{color:var(--amber)}
 
 /* ── HISTORY ── */
 .section-label{font-size:12px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.6px;margin-bottom:10px}
@@ -249,7 +247,15 @@ body{
 .day-nav-btn{border:none;background:none;cursor:pointer;font-size:22px;color:var(--pink);padding:4px 10px;border-radius:8px;line-height:1;transition:opacity .15s;flex-shrink:0}
 .day-nav-btn:active{opacity:.5}
 .day-nav-btn:disabled{color:var(--border);cursor:default}
-.day-nav-label{font-size:14px;font-weight:700;color:var(--text);flex:1;text-align:center}
+.day-nav-label{
+  font-size:14px;font-weight:700;color:var(--text);flex:1;text-align:center;
+  border:none;background:none;font-family:inherit;cursor:pointer;
+  padding:4px 8px;border-radius:8px;
+  display:flex;align-items:center;justify-content:center;gap:4px;
+  transition:opacity .15s;
+}
+.day-nav-label:active{opacity:.5}
+.day-nav-caret{font-size:9px;color:var(--text-muted)}
 .timeline-day{background:var(--card);border-radius:var(--radius);margin-bottom:12px;box-shadow:var(--shadow)}
 .tl-body{padding:4px 14px 14px;display:flex;flex-direction:column;gap:8px}
 .tl-ticks-row{display:flex;align-items:center;gap:8px}

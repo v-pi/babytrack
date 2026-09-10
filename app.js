@@ -329,23 +329,71 @@ function logBottle() {
 }
 
 // ── DAY NAVIGATION (unified) ─────────────────────────────────────────────────
-function dayNav(section, delta) {
+// `dir` of +1 steps one calendar day back (older), -1 steps one day forward
+// (newer). Days with no logs are shown empty rather than skipped, and
+// navigating past today (into the future) is blocked.
+function dayNav(section, dir) {
   if (section === 'timeline') {
-    const newIdx = tlDayIndex + delta;
-    if (newIdx < 0 || newIdx >= tlDays.length) return;
+    const newDate = addDays(tlDate, -dir);
+    if (newDate > todayStart()) return;
     const c = document.getElementById('timeline-container');
     c.classList.add('swiping');
-    setTimeout(() => { tlDayIndex = newIdx; renderTimeline(); c.classList.remove('swiping'); }, 150);
+    setTimeout(() => { tlDate = newDate; renderTimeline(); c.classList.remove('swiping'); }, 150);
   } else {
-    const days = getHistDays(allLogs.filter(l => l.type === section));
-    const newIdx = histDay[section] + delta;
-    if (newIdx < 0 || newIdx >= days.length) return;
-    histDay[section] = newIdx;
+    const newDate = addDays(histDate[section], -dir);
+    if (newDate > todayStart()) return;
+    histDate[section] = newDate;
     if      (section === 'feed')   renderFeed();
     else if (section === 'bottle') renderBottle();
     else if (section === 'sleep')  renderSleep();
     else if (section === 'diaper') renderDiapers();
   }
+}
+
+// ── DATE PICKER MODAL (day-nav) ──────────────────────────────────────────────
+// Opened by clicking the date label in any day-nav (feed/bottle/sleep/diaper/
+// timeline). Offers a native date input plus a one-tap "Aujourd'hui" shortcut.
+let _dateModalSection = null;
+
+function openDateModal(section) {
+  _dateModalSection = section;
+  const current = section === 'timeline' ? tlDate : histDate[section];
+  const input = document.getElementById('date-modal-input');
+  input.value = fmtYMD(current);
+  input.max   = fmtYMD(Date.now()); // can't browse into the future
+  document.getElementById('date-modal').classList.add('open');
+}
+
+function closeDateModal(e) {
+  if (e && e.target !== document.getElementById('date-modal')) return;
+  document.getElementById('date-modal').classList.remove('open');
+  _dateModalSection = null;
+}
+
+function _goToDate(ts) {
+  const section = _dateModalSection;
+  if (!section) return;
+  const clamped = Math.min(startOfDay(ts), todayStart());
+  if (section === 'timeline') { tlDate = clamped; renderTimeline(); }
+  else {
+    histDate[section] = clamped;
+    if      (section === 'feed')   renderFeed();
+    else if (section === 'bottle') renderBottle();
+    else if (section === 'sleep')  renderSleep();
+    else if (section === 'diaper') renderDiapers();
+  }
+  closeDateModal();
+}
+
+function applyDateModal() {
+  const input = document.getElementById('date-modal-input');
+  if (!input.value) return;
+  const [y, m, d] = input.value.split('-').map(Number);
+  _goToDate(new Date(y, m - 1, d).getTime());
+}
+
+function applyDateModalToday() {
+  _goToDate(Date.now());
 }
 
 // ── TABS ─────────────────────────────────────────────────────────────────────

@@ -22,8 +22,8 @@ let currentTab       = 'feed';
 let diaperSelection = { wet: false, dirty: false };
 let lastBottleVol   = 0;   // default 0, then last entered value
 let toastTO;
-let tlDayIndex = 0, tlDays = [];
-let histDay = { feed: 0, bottle: 0, sleep: 0, diaper: 0 };
+let tlDate = todayStart();
+let histDate = { feed: todayStart(), bottle: todayStart(), sleep: todayStart(), diaper: todayStart() };
 let statsRangeDays = 30; // Fenêtre (en jours) utilisée par les graphs de l'onglet Stats
 const TICK_LAST_FEED   = 'last-feed-global';
 const TICK_LAST_BOTTLE = 'last-bottle-global';
