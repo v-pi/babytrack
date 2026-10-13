@@ -5,8 +5,7 @@
 // Depends on globals from state.js:
 //   familyId, activeProfileId, allLogs, pendingSyncIds,
 //   breastActive, sleepActive,
-//   activateBreastTimerLocal, stopBreastTimerLocal,
-//   activateSleepTimerLocal, stopSleepTimerLocal,
+//   closeLocal, commitTimerChange, refreshTimerUI,
 //   renderCurrentTab, setSyncDot, showToast, getActiveProfile, updateHeaderProfile,
 //   saveProfiles, profiles
 // ─────────────────────────────────────────────────────────────────────────────
@@ -137,7 +136,7 @@ async function syncWithRemote() {
     }
 
     // 3. Pousser les chronos en attente hors ligne
-    await pushPendingTimers();
+    await flushAllTimers();
 
     let uiChanged = false;
 
@@ -187,124 +186,202 @@ async function syncWithRemote() {
 }
 
 // ── TIMER SYNC ───────────────────────────────────────────────────────────────
+// Modèle : le serveur porte, pour chaque (type, side), la session en cours (session_id).
+// Chaque écriture locale est une job en file. Une seule job par clé, envoyée en série :
+// deux écritures d'un même chrono ne peuvent plus se dépasser.
+// La lecture serveur (syncTimersFromRemote) est la seule source d'état distant :
+// le contenu des échos realtime n'est jamais utilisé directement.
 
-/**
- * Apply a remote active_timers row to a breast timer, handling both running
- * and paused states. Called from syncTimersFromRemote() and the realtime handler.
- * Safe to call even if the local timer is already in the target state.
- */
-function applyRemoteBreastTimer(side, row) {
-  // Supabase Realtime sends bigint columns as strings → always coerce to number.
-  // "0" is truthy, so  `row.accumulated || 0`  would keep the string "0".
-  // Number("0") = 0, Number("12345") = 12345, Number(0) = 0 — all correct.
-  const acc      = Number(row.accumulated) || 0;
-  const startMs  = toMs(row.start_time);
+const timerFlushing = {};   // clé -> true pendant l'envoi de sa file
+let timerSeq        = 0;
+let timerSyncBusy   = false;
+let timerSyncAgain  = false;
 
-  if (row.paused) {
-    // Remote timer is paused.
-    // Only update if local state differs (avoids unnecessary DOM churn).
-    const local = breastActive[side];
-    if (local && local.paused && local.accumulated === acc) return;
-
-    stopTick('b-' + side);
-    breastActive[side] = {
-      start:       null,
-      accumulated: acc,
-      paused:      true,
-      origin:      startMs,
-    };
-    document.getElementById('btn-' + side).classList.remove('running');
-    document.getElementById('btn-' + side).classList.add('paused');
-    const pb = document.getElementById('pause-' + side);
-    pb.classList.add('shown');
-    pb.textContent   = '▶ Reprendre';
-    const el = document.getElementById('timer-' + side);
-    if (el) el.textContent = fmtDur(acc);
-    saveSession();
-  } else {
-    // Remote timer is running.
-    // start_time here is the timestamp of the last resume (or initial start).
-    // accumulated is the total time from previous segments before that resume.
-    const local = breastActive[side];
-    // Guard: skip only if already running with the EXACT same segment start and
-    // accumulated. If start_time changed (the other device resumed after a pause)
-    // or accumulated differs, we must re-apply — otherwise the resume never shows.
-    if (local && !local.paused && local.start === startMs && local.accumulated === acc) return;
-
-    activateBreastTimerLocal(side, startMs, acc, startMs);
-  }
+/** Met une écriture en file. Remplace l'écriture précédente de la même clé. */
+function queueTimerJob(job) {
+  const key = timerKey(job.type, job.side);
+  pendingTimers[key] = { ...job, seq: ++timerSeq };
+  saveSyncQueues();
+  flushTimerKey(key);
 }
 
-async function pushPendingTimers() {
-  if (!supabaseClient || !navigator.onLine || !familyId) return;
-  for (const key of Object.keys(pendingTimers)) {
-    const pt = pendingTimers[key];
-    const dbSide = pt.side || 'none';
-    let err;
-    if (pt.startTime !== null) {
-      const { error } = await supabaseClient.from('active_timers').upsert({
-        family_id:   familyId,
-        type:        pt.type,
-        side:        dbSide,
-        start_time:  pt.startTime,
-        paused:      pt.paused      || false,
-        accumulated: pt.accumulated || 0,
-      });
-      err = error;
-    } else {
-      const { error } = await supabaseClient.from('active_timers')
-        .delete()
-        .eq('family_id', familyId)
-        .eq('type', pt.type)
-        .eq('side', dbSide);
-      err = error;
+/** Envoie une job. Retourne true si le serveur l'a acceptée. */
+async function sendTimerJob(job) {
+  const dbSide = job.side || 'none';
+  if (job.op === 'upsert') {
+    const { error } = await supabaseClient.from('active_timers').upsert({
+      family_id:   familyId,
+      type:        job.type,
+      side:        dbSide,
+      session_id:  job.sid,
+      origin:      job.origin,
+      start_time:  job.start ?? job.origin,   // en pause, start_time = origin (convention existante)
+      paused:      !!job.paused,
+      accumulated: job.accumulated || 0,
+    });
+    return !error;
+  }
+  // Suppression conditionnelle à la session : une session plus récente, lancée depuis
+  // un autre appareil, n'est jamais effacée par erreur.
+  let q = supabaseClient.from('active_timers').delete()
+    .eq('family_id', familyId).eq('type', job.type).eq('side', dbSide);
+  if (job.sid) q = q.eq('session_id', job.sid);
+  const { error } = await q;
+  return !error;
+}
+
+/** Envoie la file d'une clé, en série. Une job reste en file tant que le serveur ne l'a pas acceptée. */
+async function flushTimerKey(key) {
+  if (timerFlushing[key]) return;                 // la boucle en cours prendra la nouvelle job
+  if (!supabaseClient || !familyId || !navigator.onLine) return;
+  timerFlushing[key] = true;
+  let sent = false;
+  try {
+    let job;
+    while ((job = pendingTimers[key])) {
+      if (!(await sendTimerJob(job))) break;     // reste en file, réessayée à la prochaine synchro
+      sent = true;
+      // Comparaison d'identité : si une job plus récente est arrivée pendant l'envoi, elle reste.
+      if (pendingTimers[key] === job) delete pendingTimers[key];
+      saveSyncQueues();
     }
-    if (!err) delete pendingTimers[key];
+  } catch (e) {
+    console.error('[BabyTrack] flush chrono :', e);
+  } finally {
+    timerFlushing[key] = false;
   }
-  saveSyncQueues();
+  if (sent) syncTimersFromRemote();
 }
 
-/**
- * Persist a timer state to the remote `active_timers` table.
- * @param {string}       type        - 'feed' | 'sleep'
- * @param {string|null}  side        - 'left' | 'right' | null
- * @param {number|null}  startTime   - ms timestamp of current segment start,
- *                                     or null to delete the remote timer
- * @param {boolean}      [paused]    - true when the timer is paused
- * @param {number}       [accumulated] - ms already elapsed before current segment
- */
-async function setRemoteTimer(type, side, startTime, paused = false, accumulated = 0) {
-  const key = type + '_' + (side || 'none');
-  // _sentAt lets the realtime guard use a time-based TTL (5 s) instead of
-  // relying solely on key presence. This prevents a failed push from blocking
-  // realtime events indefinitely after the app restarts with stale pendingTimers.
-  pendingTimers[key] = { type, side, startTime, paused, accumulated, _sentAt: Date.now() };
-  saveSyncQueues();
-  pushPendingTimers(); // Launches sync in background, or keeps queued if offline
+async function flushAllTimers() {
+  await Promise.all(Object.keys(pendingTimers).map(flushTimerKey));
 }
 
+/** Relit l'état serveur des chronos et le réconcilie avec l'état local. Une passe à la fois. */
 async function syncTimersFromRemote() {
-  if (!supabaseClient || !familyId) return;
-  const { data: timers } = await supabaseClient
-    .from('active_timers').select('*').eq('family_id', familyId);
-  if (!timers) return;
+  if (!supabaseClient || !familyId || !navigator.onLine) return;
+  if (timerSyncBusy) { timerSyncAgain = true; return; }
+  timerSyncBusy = true;
+  try {
+    do {
+      timerSyncAgain = false;
+      const epoch = timerEpoch;
+      const { data: rows, error } = await supabaseClient
+        .from('active_timers').select('*').eq('family_id', familyId);
+      if (error || !rows) break;
+      // Une action locale a eu lieu pendant la lecture : la réponse peut être périmée, on relit.
+      if (epoch !== timerEpoch) { timerSyncAgain = true; continue; }
+      reconcileTimers(rows);
+    } while (timerSyncAgain);
+  } finally {
+    timerSyncBusy = false;
+  }
+}
 
-  // ── Breast timers ──────────────────────────────────────────────────────────
-  ['left', 'right'].forEach(side => {
-    if (pendingTimers['feed_' + side]) return; // Local change in-flight — skip
-    const row = timers.find(t => t.type === 'feed' && t.side === side);
-    if (row) {
-      applyRemoteBreastTimer(side, row);
-    } else if (breastActive[side]) {
-      stopBreastTimerLocal(side);
-    }
+function normalizeRemoteRows(rows) {
+  return rows.map(r => {
+    const side   = r.side === 'none' ? null : r.side;
+    const paused = !!r.paused;
+    return {
+      type:        r.type,
+      side,
+      key:         timerKey(r.type, side),
+      sid:         r.session_id || null,
+      origin:      r.origin != null ? toMs(r.origin) : toMs(r.start_time),
+      start:       paused ? null : toMs(r.start_time),
+      paused,
+      accumulated: Number(r.accumulated) || 0,
+    };
   });
+}
 
-  // ── Sleep timer ────────────────────────────────────────────────────────────
-  if (!pendingTimers['sleep_none']) {
-    const sa = timers.find(t => t.type === 'sleep' && (t.side === 'none' || !t.side));
-    if (sa && !sleepActive)      activateSleepTimerLocal(toMs(sa.start_time));
-    else if (!sa && sleepActive) stopSleepTimerLocal();
+function upsertJobFor(l) {
+  const s = l.s;
+  return {
+    op: 'upsert', type: l.type, side: l.side, sid: s.sid, origin: s.origin,
+    start: s.paused ? null : s.start, paused: !!s.paused, accumulated: s.accumulated || 0,
+  };
+}
+
+/** Même session, état différent sur le serveur (pause ou reprise faite ailleurs) : on suit le serveur. */
+function mergeRemoteState(l, r) {
+  if (l.type !== 'feed') return;
+  const s = l.s;
+  const same = s.paused === r.paused && s.accumulated === r.accumulated && (r.paused || s.start === r.start);
+  if (same) return;
+  s.paused      = r.paused;
+  s.accumulated = r.accumulated;
+  s.start       = r.paused ? null : r.start;
+  commitTimerChange(l.type, l.side);
+}
+
+/** Adopte une session distante : elle devient l'état local. */
+function adoptRemote(r) {
+  if (r.type === 'feed') {
+    breastActive[r.side] = { sid: r.sid, origin: r.origin, start: r.start, accumulated: r.accumulated, paused: r.paused, seen: true };
+  } else {
+    sleepActive = { sid: r.sid, origin: r.origin, start: r.origin, accumulated: 0, paused: false, seen: true };
+  }
+  commitTimerChange(r.type, r.side);
+}
+
+/**
+ * Compare l'état serveur à l'état local et converge vers une seule session active
+ * (la plus récente). Les écritures en attente font foi : on n'applique rien sur leur clé.
+ */
+function reconcileTimers(rows) {
+  const remote = normalizeRemoteRows(rows);
+
+  // 1. Chaque session distante
+  for (const r of remote) {
+    if (pendingTimers[r.key]) continue;
+
+    // Session déjà terminée ici : son passage sur le serveur est un reliquat à retirer.
+    if (r.sid && closedSessions.has(r.sid)) {
+      queueTimerJob({ op: 'delete', type: r.type, side: r.side, sid: r.sid });
+      continue;
+    }
+
+    // Session déjà connue : on applique ce qui a changé ailleurs (pause, reprise).
+    const mine = r.sid ? allLocalSessions().find(l => l.s.sid === r.sid) : null;
+    if (mine) {
+      mine.s.seen = true;
+      mergeRemoteState(mine, r);
+      continue;
+    }
+
+    // Ligne sans session (ancien client) : on la revendique avec un sid.
+    if (!r.sid) {
+      queueTimerJob({ op: 'upsert', type: r.type, side: r.side, sid: crypto.randomUUID(),
+        origin: r.origin, start: r.start, paused: r.paused, accumulated: r.accumulated });
+      continue;
+    }
+
+    // Session inconnue : conflit avec la plus récente de nos sessions locales ?
+    const top = newestLocal();
+    if (top && isNewer(top.s, r)) {
+      // La nôtre est plus récente : on la réécrit, et on retire la session distante.
+      if (!pendingTimers[top.key]) queueTimerJob(upsertJobFor(top));
+      if (r.key !== top.key) queueTimerJob({ op: 'delete', type: r.type, side: r.side, sid: r.sid });
+      continue;
+    }
+
+    // La session distante gagne : nos sessions locales se terminent à son début.
+    for (const l of allLocalSessions()) closeLocal(l, r.origin, l.key !== r.key);
+    adoptRemote(r);
+  }
+
+  // 2. Une seule session active : si plusieurs, la plus récente gagne.
+  const locals = allLocalSessions();
+  if (locals.length > 1) {
+    const top = newestLocal();
+    for (const l of locals) if (l.key !== top.key) closeLocal(l, top.s.origin, true);
+  }
+
+  // 3. Session vue ici, absente du serveur : elle s'est terminée ailleurs.
+  const remoteSids = new Set(remote.map(r => r.sid));
+  for (const l of allLocalSessions()) {
+    if (l.s.seen && !remoteSids.has(l.s.sid) && !pendingTimers[l.key]) closeLocal(l, Date.now(), false);
   }
 }
 
@@ -346,40 +423,12 @@ function setupRealtime() {
   _realtimeChannels = [];
 
   const ch = supabaseClient.channel('rt-' + familyId)
-    // ── Active timers ──────────────────────────────────────────────────────
+    // ── Active timers ─────────────────────────────────────────────────────
+    // Le contenu de l'événement n'est pas utilisé : on relit l'état serveur (source de vérité).
     .on('postgres_changes', {
       event: '*', schema: 'public', table: 'active_timers',
       filter: `family_id=eq.${familyId}`
-    }, ({ eventType, new: n, old: o }) => {
-      if (eventType === 'INSERT' || eventType === 'UPDATE') {
-        if (!n) return;
-        const key = n.type + '_' + (n.side || 'none');
-        // Time-based guard: ignore own echo only if the push was < 5 s ago.
-        // A simple key-presence check would block realtime permanently if the
-        // push failed and the app restarted with stale pendingTimers in localStorage.
-        const pt = pendingTimers[key];
-        if (pt && (Date.now() - (pt._sentAt || 0)) < 5000) return;
-
-        if (n.type === 'feed') {
-          applyRemoteBreastTimer(n.side, n); // handles both paused & running
-        } else {
-          // Sleep timer — no pause support yet, simple start.
-          // Guard against re-applying an echo of our own insert (possible if
-          // the pendingTimers TTL already expired before this event arrived):
-          // skip if local state already matches.
-          const startMs = toMs(n.start_time);
-          if (sleepActive && sleepActive.start === startMs) return;
-          activateSleepTimerLocal(startMs);
-        }
-      } else if (eventType === 'DELETE') {
-        if (!o) return;
-        const key = o.type + '_' + (o.side || 'none');
-        const pt = pendingTimers[key];
-        if (pt && (Date.now() - (pt._sentAt || 0)) < 5000) return;
-        if (o.type === 'sleep' || o.side === 'none') stopSleepTimerLocal();
-        else stopBreastTimerLocal(o.side);
-      }
-    })
+    }, () => { syncTimersFromRemote(); })
     .on('postgres_changes', { event: '*', schema: 'public', table: 'logs', filter: `family_id=eq.${familyId}` }, ({ eventType, new: n, old: o }) => {
       if (eventType === 'INSERT' || eventType === 'UPDATE') {
         if (pendingSyncIds.has(n.id)) return; // Ignorer l'écho de sa propre action

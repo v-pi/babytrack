@@ -102,30 +102,11 @@ async function loadProfileData() {
 }
 
 // ── TIMERS ────────────────────────────────────────────────────────────────────
-function restoreTimers() {
-  ['left','right'].forEach(s => {
-    const state = breastActive[s];
-    if (!state) return;
-    if (state.paused) {
-      document.getElementById('btn-'+s).classList.add('paused');
-      const pb = document.getElementById('pause-'+s);
-      pb.classList.add('shown');
-      pb.textContent = '▶ Reprendre';
-      const el = document.getElementById('timer-'+s); // Fix: was missing, causing silent error
-      if (el) el.textContent = fmtDur(state.accumulated);
-    } else {
-      activateBreastTimerLocal(s, state.start, state.accumulated || 0, state.origin || state.start);
-    }
-  });
-  if (sleepActive) activateSleepTimerLocal(sleepActive.start);
-}
+// L'état d'un chrono est breastActive[side] / sleepActive (voir state.js).
+// Une action locale : modifie l'état, persiste, met à jour l'UI, puis met une
+// écriture en file (queueTimerJob, sync.js). La synchro ne fait que réconcilier.
 
-// Debounce guard: a real double-tap/ghost-click on mobile can dispatch two
-// 'click' events for what the user experiences as a single tap. Because
-// toggleBreast()/toggleSleep() flip state synchronously, the 2nd call would
-// otherwise see the timer as "already running" and immediately stop it again
-// (or vice-versa) — producing a spurious near-0s log the user has to notice
-// and delete, and a timer that looks like it "started twice".
+// Anti-rebond : un double clic réel peut produire deux événements 'click'.
 let _lastToggleAt = {};
 function debounced(key, ms = 500) {
   const now = Date.now();
@@ -134,120 +115,165 @@ function debounced(key, ms = 500) {
   return false;
 }
 
+// ── AFFICHAGE ─────────────────────────────────────────────────────────────────
+function refreshTimerUI(type, side) {
+  if (type === 'feed') renderBreastUI(side);
+  else renderSleepUI();
+}
+
+function renderBreastUI(side) {
+  const s   = breastActive[side];
+  const btn = document.getElementById('btn-' + side);
+  const pb  = document.getElementById('pause-' + side);
+  const el  = document.getElementById('timer-' + side);
+  stopTick('b-' + side);
+  if (!btn || !pb) return;
+  if (!s) {
+    btn.classList.remove('running', 'paused');
+    pb.classList.remove('shown');
+    if (el) el.textContent = '00:00';
+    return;
+  }
+  pb.classList.add('shown');
+  if (s.paused) {
+    btn.classList.remove('running');
+    btn.classList.add('paused');
+    pb.textContent = '▶ Reprendre';
+    if (el) el.textContent = fmtDur(s.accumulated);
+    return;
+  }
+  btn.classList.add('running');
+  btn.classList.remove('paused');
+  pb.textContent = '⏸ Pause';
+  startTick('b-' + side, () => {
+    const cur = breastActive[side];
+    if (cur && !cur.paused && el) el.textContent = fmtDur(cur.accumulated + Date.now() - cur.start);
+  });
+}
+
+function renderSleepUI() {
+  const btn = document.getElementById('sleep-btn');
+  const lbl = document.getElementById('sleep-label');
+  const sub = document.getElementById('sleep-sub');
+  const ico = document.getElementById('sleep-icon');
+  const el  = document.getElementById('sleep-timer');
+  stopTick('sleep');
+  if (!btn) return;
+  if (!sleepActive) {
+    btn.classList.remove('sleeping');
+    lbl.textContent = 'Début du sommeil';
+    sub.textContent = 'Appuyer pour commencer';
+    ico.textContent = '😴';
+    if (el) el.textContent = '--:--';
+    return;
+  }
+  btn.classList.add('sleeping');
+  lbl.textContent = 'En train de dormir';
+  sub.textContent = 'Appuyer pour arrêter';
+  ico.textContent = '🌙';
+  startTick('sleep', () => {
+    const cur = sleepActive;
+    if (cur && el) el.textContent = fmtDur(Date.now() - cur.start);
+  });
+}
+
+function restoreTimers() {
+  renderBreastUI('left');
+  renderBreastUI('right');
+  renderSleepUI();
+}
+
+/** À appeler après toute modification de l'état d'un chrono. */
+function commitTimerChange(type, side) {
+  timerEpoch++;
+  saveSession();
+  refreshTimerUI(type, side);
+  renderCurrentTab();
+}
+
+// ── FIN DE SESSION ────────────────────────────────────────────────────────────
+/**
+ * Termine une session locale :
+ *  - écrit le log avec id = sid : une seconde écriture réécrit la même ligne, jamais de doublon ;
+ *  - retire l'état local et mémorise le sid : un écho tardif ne peut plus la relancer ;
+ *  - si deleteRow, écrit la suppression conditionnelle au sid.
+ */
+function closeLocal(l, endTs, deleteRow = true) {
+  const s = l.s;
+  const duration = s.accumulated + (s.paused ? 0 : Math.max(0, endTs - s.start));
+  logAction({
+    id: s.sid, type: l.type, ...(l.side ? { side: l.side } : {}),
+    start: s.origin, end: endTs, duration, timestamp: endTs,
+  });
+  markClosed(s.sid);
+  if (l.type === 'feed') breastActive[l.side] = null;
+  else sleepActive = null;
+  commitTimerChange(l.type, l.side);
+  if (deleteRow) queueTimerJob({ op: 'delete', type: l.type, side: l.side, sid: s.sid });
+}
+
+/** Termine toutes les sessions actives, sauf celle désignée par exceptType / exceptSide. */
+function stopAllActive(exceptType, exceptSide) {
+  const now = Date.now();
+  for (const side of ['left', 'right']) {
+    if (exceptType === 'feed' && exceptSide === side) continue;
+    if (breastActive[side]) closeLocal(localSession('feed', side), now, true);
+  }
+  if (exceptType !== 'sleep' && sleepActive) closeLocal(localSession('sleep', null), now, true);
+}
+
+/** Réinitialisation du profil : on efface l'état sans journaliser, les données sont supprimées. */
+function clearLocalTimers() {
+  breastActive  = { left: null, right: null };
+  sleepActive   = null;
+  pendingTimers = {};
+  saveSyncQueues();
+  restoreTimers();
+}
+
+// ── ACTIONS UTILISATEUR ───────────────────────────────────────────────────────
 function toggleBreast(side) {
   if (debounced('feed_' + side)) return;
   if (breastActive[side]) {
-    const s = breastActive[side];
-    const dur = s.accumulated + (s.paused ? 0 : Date.now() - s.start);
-    logAction({ type:'feed', side, start:s.origin, end:Date.now(), duration:dur, timestamp:Date.now() });
-    stopBreastTimerLocal(side);
-    setRemoteTimer('feed', side, null);
-    showToast(`Tétée ${side==='left'?'gauche':'droite'} enregistrée`);
-  } else {
-    stopAllActive(side);
-    const start = Date.now();
-    activateBreastTimerLocal(side, start, 0, start);
-    setRemoteTimer('feed', side, start);
+    closeLocal(localSession('feed', side), Date.now(), true);
+    showToast(`Tétée ${side === 'left' ? 'gauche' : 'droite'} enregistrée`);
+    return;
   }
-}
-
-function activateBreastTimerLocal(side, start, accumulated = 0, origin = null) {
-  breastActive[side] = { start, accumulated, origin: origin || start };
-  document.getElementById('btn-'+side).classList.add('running');
-  document.getElementById('btn-'+side).classList.remove('paused');
-  const pb = document.getElementById('pause-'+side);
-  pb.classList.add('shown');
-  pb.textContent = '⏸ Pause';
-  startTick('b-'+side, () => {
-    const el = document.getElementById('timer-'+side);
-    if (el) el.textContent = fmtDur(accumulated + Date.now() - start);
-  });
-  saveSession();
-}
-
-function stopBreastTimerLocal(side) {
-  breastActive[side] = null;
-  document.getElementById('btn-'+side).classList.remove('running', 'paused');
-  document.getElementById('pause-'+side).classList.remove('shown');
-  stopTick('b-'+side);
-  const el = document.getElementById('timer-'+side);
-  if (el) el.textContent = '00:00';
-  saveSession();
-  renderCurrentTab();
+  stopAllActive('feed', side);
+  const now = Date.now();
+  breastActive[side] = { sid: crypto.randomUUID(), origin: now, start: now, accumulated: 0, paused: false, seen: false };
+  commitTimerChange('feed', side);
+  queueTimerJob(upsertJobFor(localSession('feed', side)));
 }
 
 function togglePauseBreast(side) {
   const s = breastActive[side];
   if (!s) return;
   if (s.paused) {
-    // ── Resume ──────────────────────────────────────────────────────────────
-    // start_time on the remote = timestamp of this resume (current segment).
-    // accumulated = total elapsed before this segment.
-    const resumeStart = Date.now();
-    activateBreastTimerLocal(side, resumeStart, s.accumulated, s.origin);
-    // Notify other browsers: timer is running again from resumeStart,
-    // with s.accumulated already banked.
-    setRemoteTimer('feed', side, resumeStart, false, s.accumulated);
+    s.start  = Date.now();          // reprise : nouveau segment, même session
+    s.paused = false;
   } else {
-    // ── Pause ────────────────────────────────────────────────────────────────
-    const accumulated = s.accumulated + Date.now() - s.start;
-    stopTick('b-'+side);
-    breastActive[side] = { start: null, accumulated, paused: true, origin: s.origin };
-    document.getElementById('btn-'+side).classList.remove('running');
-    document.getElementById('btn-'+side).classList.add('paused');
-    const el = document.getElementById('timer-'+side);
-    if (el) el.textContent = fmtDur(accumulated);
-    document.getElementById('pause-'+side).textContent = '▶ Reprendre';
-    saveSession();
-    // Notify other browsers: timer is paused with `accumulated` ms banked.
-    // start_time keeps the origin so remote can still show when the feed started.
-    setRemoteTimer('feed', side, s.origin, true, accumulated);
+    s.accumulated += Date.now() - s.start;
+    s.start  = null;                // pause : le segment est cumulé
+    s.paused = true;
   }
+  commitTimerChange('feed', side);
+  queueTimerJob(upsertJobFor(localSession('feed', side)));
 }
 
 function toggleSleep() {
   if (debounced('sleep')) return;
   if (sleepActive) {
-    const dur = Date.now() - sleepActive.start;
-    logAction({ type:'sleep', start:sleepActive.start, end:Date.now(), duration:dur, timestamp:Date.now() });
-    stopSleepTimerLocal();
-    setRemoteTimer('sleep', null, null);
+    closeLocal(localSession('sleep', null), Date.now(), true);
     showToast('Sommeil enregistré');
-  } else {
-    stopAllActive('sleep');
-    const start = Date.now();
-    activateSleepTimerLocal(start);
-    setRemoteTimer('sleep', null, start);
+    return;
   }
+  stopAllActive('sleep', null);
+  const now = Date.now();
+  sleepActive = { sid: crypto.randomUUID(), origin: now, start: now, accumulated: 0, paused: false, seen: false };
+  commitTimerChange('sleep', null);
+  queueTimerJob(upsertJobFor(localSession('sleep', null)));
 }
-
-function activateSleepTimerLocal(start) {
-  sleepActive = { start };
-  document.getElementById('sleep-btn').classList.add('sleeping');
-  document.getElementById('sleep-label').textContent = 'En train de dormir';
-  document.getElementById('sleep-sub').textContent   = 'Appuyer pour arrêter';
-  document.getElementById('sleep-icon').textContent  = '🌙';
-  startTick('sleep', () => {
-    const el = document.getElementById('sleep-timer');
-    if (el) el.textContent = fmtDur(Date.now() - start);
-  });
-  saveSession();
-}
-
-function stopSleepTimerLocal() {
-  sleepActive = null;
-  document.getElementById('sleep-btn').classList.remove('sleeping');
-  document.getElementById('sleep-label').textContent = 'Début du sommeil';
-  document.getElementById('sleep-sub').textContent   = 'Appuyer pour commencer';
-  document.getElementById('sleep-icon').textContent  = '😴';
-  const el = document.getElementById('sleep-timer');
-  if (el) el.textContent = '--:--';
-  stopTick('sleep');
-  saveSession();
-  // Same rationale as stopBreastTimerLocal — ensures render after state is cleared.
-  renderCurrentTab();
-}
-
 
 // ── STATS RANGE ───────────────────────────────────────────────────────────────
 function setStatsRange(days) {
@@ -508,14 +534,14 @@ function confirmReset() {
 }
 
 async function resetCurrentProfile() {
-  stopAllActive('__none__'); stopAllTicks();
+  clearLocalTimers(); stopAllTicks();
   if (supabaseClient && navigator.onLine && familyId) {
     setSyncDot('syncing');
     await supabaseClient.from('logs').delete().eq('family_id', familyId);
     await supabaseClient.from('active_timers').delete().eq('family_id', familyId);
   }
   await dbClear();
-  allLogs = []; breastActive = {left:null,right:null}; sleepActive = null;
+  allLogs = [];
   localStorage.removeItem('bt_session_'+activeProfileId);
   renderCurrentTab();
   document.getElementById('profile-modal').classList.remove('open');

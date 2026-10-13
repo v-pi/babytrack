@@ -1,49 +1,128 @@
 // ── state.js ──────────────────────────────────────────────────────────────────
-// Global state, profile management, session persistence, log CRUD, timer helpers.
-// No DOM rendering here — only data + a few status helpers.
+// État global, profils, persistance des sessions de chrono, CRUD des logs.
+// Aucun rendu DOM ici : données et helpers d'état uniquement.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const EMOJIS = ['👶','🧒','🐣','🌟','🌈','🦋','🐧','🐻','🦊','🐼','🍭','🌸'];
 
-// ── GLOBAL STATE ─────────────────────────────────────────────────────────────
+// ── ÉTAT GLOBAL ──────────────────────────────────────────────────────────────
 let profiles         = [];
 let activeProfileId  = null;
 let familyId         = null;
 let allLogs          = [];
 let pendingSyncIds   = new Set(); // Logs à ajouter/modifier sur le serveur
-let pendingDeletes   = new Set(); // IDs à supprimer sur le serveur
-let pendingTimers    = {};        // [NOUVEAU] Chronos en attente de synchro { 'feed_left': { type, side, startTime } }
+let pendingDeletes   = new Set(); // Legacy : non alimenté, conservé pour compatibilité
+let pendingTimers    = {};        // Une écriture en attente par chrono : { 'feed_left': job } (sync.js)
+let closedSessions   = new Set(); // sid des sessions déjà terminées sur cet appareil
+let timerEpoch       = 0;         // Incrémenté à chaque action locale sur un chrono
 let breastActive     = { left: null, right: null };
 let sleepActive      = null;
 let ticks            = {};
 let editingLog       = null;
 let editingProfileId = null;
 let currentTab       = 'feed';
-let diaperSelection = { wet: false, dirty: false };
-let lastBottleVol   = 0;   // default 0, then last entered value
+let diaperSelection  = { wet: false, dirty: false };
+let lastBottleVol    = 0;
 let toastTO;
-let tlDate = todayStart();
+let tlDate   = todayStart();
 let histDate = { feed: todayStart(), bottle: todayStart(), sleep: todayStart(), diaper: todayStart() };
 let statsRangeDays = 30; // Fenêtre (en jours) utilisée par les graphs de l'onglet Stats
 const TICK_LAST_FEED   = 'last-feed-global';
 const TICK_LAST_BOTTLE = 'last-bottle-global';
 
-// ── SYNC QUEUES (Sauvegarde locale des actions en attente) ───────────────────
+// ── SESSIONS DE CHRONO ───────────────────────────────────────────────────────
+// Une session = une période de chrono, identifiée par un sid (UUID créé au démarrage).
+//   sid         : identifiant unique, aussi id du log produit à l'arrêt
+//   origin      : début de la session, inchangé par pause et reprise
+//   start       : début du segment courant (null en pause)
+//   accumulated : durée des segments précédents (ms)
+//   paused      : true en pause (chrono de tétée uniquement)
+//   seen        : true une fois la session observée sur le serveur
+function timerKey(type, side) { return type + '_' + (side || 'none'); }
+
+/** Session locale d'un type/côté, ou null. Retourne { type, side, key, s } ; s est l'objet de session. */
+function localSession(type, side) {
+  if (type === 'feed') {
+    return breastActive[side] ? { type, side, key: timerKey(type, side), s: breastActive[side] } : null;
+  }
+  return sleepActive ? { type: 'sleep', side: null, key: 'sleep_none', s: sleepActive } : null;
+}
+
+function allLocalSessions() {
+  return [localSession('feed', 'left'), localSession('feed', 'right'), localSession('sleep', null)].filter(Boolean);
+}
+
+/** Vrai si la session a gagne sur b : début plus tardif, à égalité sid le plus grand. */
+function isNewer(a, b) {
+  return a.origin > b.origin || (a.origin === b.origin && a.sid > b.sid);
+}
+
+function newestLocal() {
+  return allLocalSessions().reduce((best, l) => (!best || isNewer(l.s, best.s) ? l : best), null);
+}
+
+function markClosed(sid) {
+  closedSessions.add(sid);
+  if (closedSessions.size > 200) closedSessions = new Set([...closedSessions].slice(-200));
+}
+
+/** Session persistée (ancien ou nouveau format) → session valide avec un sid stable. */
+function normalizeSession(o, type, side) {
+  const job    = pendingTimers[timerKey(type, side)];
+  const origin = Number(o.origin ?? o.start) || Date.now();
+  const paused = type === 'feed' && !!o.paused;
+  return {
+    sid:         o.sid || (job && job.op === 'upsert' ? job.sid : null) || crypto.randomUUID(),
+    origin,
+    start:       paused ? null : (Number(o.start) || origin),
+    accumulated: type === 'feed' ? (Number(o.accumulated) || 0) : 0,
+    paused,
+    seen:        !!o.seen,
+  };
+}
+
+// ── FILES D'ATTENTE (sauvegarde locale) ──────────────────────────────────────
+// Format d'une écriture de chrono (job) :
+//   { op:'upsert', type, side, sid, origin, start, paused, accumulated }
+//   { op:'delete', type, side, sid }   sid null = suppression inconditionnelle (legacy)
+function migrateLegacyJob(pt) {
+  if (!pt) return null;
+  if (pt.op) return pt;                                                 // déjà au nouveau format
+  if (pt.startTime === null || pt.startTime === undefined)
+    return { op: 'delete', type: pt.type, side: pt.side || null, sid: null };
+  return {
+    op: 'upsert', type: pt.type, side: pt.side || null, sid: crypto.randomUUID(),
+    origin: pt.startTime, start: pt.paused ? null : pt.startTime,
+    paused: !!pt.paused, accumulated: pt.accumulated || 0,
+  };
+}
+
 function loadSyncQueues() {
   try {
     pendingSyncIds = new Set(JSON.parse(localStorage.getItem('bt_pending_sync') || '[]'));
     pendingDeletes = new Set(JSON.parse(localStorage.getItem('bt_pending_del') || '[]'));
-    pendingTimers  = JSON.parse(localStorage.getItem('bt_pending_timers') || '{}');
-  } catch { pendingSyncIds = new Set(); pendingDeletes = new Set(); pendingTimers = {}; }
+    closedSessions = new Set(JSON.parse(localStorage.getItem('bt_closed_sessions') || '[]'));
+    const raw = JSON.parse(localStorage.getItem('bt_pending_timers') || '{}');
+    pendingTimers = {};
+    for (const key of Object.keys(raw)) {
+      const job = migrateLegacyJob(raw[key]);
+      if (job) pendingTimers[key] = job;
+    }
+  } catch {
+    pendingSyncIds = new Set(); pendingDeletes = new Set();
+    pendingTimers  = {};        closedSessions  = new Set();
+  }
+  saveSyncQueues(); // fige les sid de migration : ils ne doivent pas changer à chaque chargement
 }
 
 function saveSyncQueues() {
-  localStorage.setItem('bt_pending_sync', JSON.stringify([...pendingSyncIds]));
-  localStorage.setItem('bt_pending_del', JSON.stringify([...pendingDeletes]));
-  localStorage.setItem('bt_pending_timers', JSON.stringify(pendingTimers));
+  localStorage.setItem('bt_pending_sync',    JSON.stringify([...pendingSyncIds]));
+  localStorage.setItem('bt_pending_del',     JSON.stringify([...pendingDeletes]));
+  localStorage.setItem('bt_pending_timers',  JSON.stringify(pendingTimers));
+  localStorage.setItem('bt_closed_sessions', JSON.stringify([...closedSessions]));
 }
 
-// ── PROFILES ─────────────────────────────────────────────────────────────────
+// ── PROFILS ──────────────────────────────────────────────────────────────────
 function loadProfiles() {
   try { profiles = JSON.parse(localStorage.getItem('bt_profiles') || '[]'); } catch { profiles = []; }
   activeProfileId = localStorage.getItem('bt_active_profile');
@@ -53,7 +132,7 @@ function loadProfiles() {
   }
   if (!activeProfileId || !profiles.find(p => p.id === activeProfileId))
     activeProfileId = profiles[0].id;
-    
+
   loadSyncQueues();
   try { lastBottleVol = parseInt(localStorage.getItem('bt_last_bottle_vol') || '0', 10) || 0; } catch { lastBottleVol = 0; }
 }
@@ -90,11 +169,13 @@ function setSyncDot(state) {
 
 // ── LOG ACTIONS ───────────────────────────────────────────────────────────────
 async function logAction(log) {
-  log.id = crypto.randomUUID();
+  // Un id fourni (sid d'une session) fait qu'une seconde écriture réécrit la même ligne.
+  log.id = log.id || crypto.randomUUID();
   log.updated_at = new Date().toISOString(); // Assure la compatibilité Delta Sync
   if (familyId) log.family_id  = familyId;
   else          log.profile_id = activeProfileId;
-  allLogs.push(log);
+  const idx = allLogs.findIndex(l => l.id === log.id);
+  if (idx >= 0) allLogs[idx] = log; else allLogs.push(log);
   renderCurrentTab();
   await dbPut(log);
 
@@ -152,32 +233,19 @@ function startTick(id, fn) { if (ticks[id]) clearInterval(ticks[id]); ticks[id] 
 function stopTick(id)      { clearInterval(ticks[id]); delete ticks[id]; }
 function stopAllTicks()    { Object.keys(ticks).forEach(stopTick); }
 
-function stopAllActive(except) {
-  ['left', 'right'].forEach(side => {
-    if (except !== side && breastActive[side]) {
-      const s = breastActive[side];
-      const dur = s.accumulated + (s.paused ? 0 : Date.now() - s.start);
-      logAction({ type:'feed', side, start:s.origin, end:Date.now(), duration:dur, timestamp:Date.now() });
-      stopBreastTimerLocal(side);
-      setRemoteTimer('feed', side, null);
-    }
-  });
-  if (except !== 'sleep' && sleepActive) {
-    const dur = Date.now() - sleepActive.start;
-    logAction({ type:'sleep', start:sleepActive.start, end:Date.now(), duration:dur, timestamp:Date.now() });
-    stopSleepTimerLocal();
-    setRemoteTimer('sleep', null, null);
-  }
+// ── PERSISTANCE DES SESSIONS ─────────────────────────────────────────────────
+function saveSession() {
+  localStorage.setItem('bt_session_' + activeProfileId, JSON.stringify({ breastActive, sleepActive }));
 }
 
-// ── SESSION ───────────────────────────────────────────────────────────────────
-function saveSession() {
-  localStorage.setItem('bt_session_'+activeProfileId, JSON.stringify({ breastActive, sleepActive }));
-}
 function loadSession() {
-  try {
-    const s = JSON.parse(localStorage.getItem('bt_session_'+activeProfileId) || 'null');
-    if (s) { breastActive = s.breastActive || { left:null, right:null }; sleepActive = s.sleepActive || null; }
-    else   { breastActive = { left:null, right:null }; sleepActive = null; }
-  } catch { breastActive = { left:null, right:null }; sleepActive = null; }
+  let s = null;
+  try { s = JSON.parse(localStorage.getItem('bt_session_' + activeProfileId) || 'null'); } catch { s = null; }
+  breastActive = { left: null, right: null };
+  sleepActive  = null;
+  if (!s) return;
+  ['left', 'right'].forEach(side => {
+    if (s.breastActive && s.breastActive[side]) breastActive[side] = normalizeSession(s.breastActive[side], 'feed', side);
+  });
+  if (s.sleepActive) sleepActive = normalizeSession(s.sleepActive, 'sleep', null);
 }

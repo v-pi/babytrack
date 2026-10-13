@@ -35,6 +35,8 @@ CREATE TABLE IF NOT EXISTS public.active_timers (
   start_time bigint NOT NULL,
   paused boolean DEFAULT false,
   accumulated bigint DEFAULT 0,
+  session_id uuid,
+  origin bigint,
   PRIMARY KEY (family_id, type, side)
 );
 
