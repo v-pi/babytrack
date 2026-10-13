@@ -94,3 +94,66 @@ function addDays(ts, n) {
   d.setHours(0, 0, 0, 0);
   return d.getTime();
 }
+
+// ── CHRONOS ET JOURNÉES ──────────────────────────────────────────────────────
+// Un chrono (tétée, sommeil) occupe la plage [start, start + duration].
+// Il appartient à chaque journée locale qu'il chevauche, et pas seulement à celle
+// où il commence ou finit. Un point (couche, biberon) appartient au jour de son timestamp.
+
+/** Plage d'un chrono [start, start + duration], ou null pour un point. Valeurs forcées en nombres. */
+function spanOf(l) {
+  if (l.start === undefined || l.start === null) return null;
+  const start = Number(l.start);
+  return { start, end: start + (Number(l.duration) || 0) };
+}
+
+/** Instant représentatif : le début pour un chrono, le timestamp pour un point. */
+function anchorOf(l) {
+  const sp = spanOf(l);
+  return sp ? sp.start : Number(l.timestamp);
+}
+
+/** Le log apparaît-il sur la journée commençant à dayStart (minuit local) ? */
+function logOnDay(l, dayStart) {
+  const dayEnd = addDays(dayStart, 1);
+  const sp = spanOf(l);
+  if (!sp) {
+    const t = Number(l.timestamp);
+    return t >= dayStart && t < dayEnd;
+  }
+  if (sp.end > sp.start) return sp.start < dayEnd && sp.end > dayStart;
+  return sp.start >= dayStart && sp.start < dayEnd;   // chrono de durée nulle
+}
+
+/** Découpe un chrono en morceaux, un par journée locale traversée. [] pour un point. */
+function splitByDay(l) {
+  const sp = spanOf(l);
+  if (!sp) return [];
+  if (sp.end <= sp.start) {
+    return [{ dayStart: startOfDay(sp.start), start: sp.start, end: sp.start, duration: 0 }];
+  }
+  const pieces = [];
+  let day = startOfDay(sp.start);
+  while (day < sp.end) {
+    const next = addDays(day, 1);            // minuit suivant, exact même un jour de changement d'heure
+    const s = Math.max(sp.start, day);
+    const e = Math.min(sp.end, next);
+    if (e > s) pieces.push({ dayStart: day, start: s, end: e, duration: e - s });
+    day = next;
+  }
+  return pieces;
+}
+
+/** Morceau d'un chrono tombant sur la journée dayStart, ou null. */
+function partOnDay(l, dayStart) {
+  return splitByDay(l).find(p => p.dayStart === dayStart) || null;
+}
+
+/** Realtime envoie les bigint sous forme de chaînes : on les ramène en nombres. */
+function normalizeLogRow(r) {
+  const out = { ...r };
+  ['start', 'end', 'duration', 'timestamp', 'volume'].forEach(k => {
+    if (out[k] !== null && out[k] !== undefined && out[k] !== '') out[k] = Number(out[k]);
+  });
+  return out;
+}

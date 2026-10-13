@@ -47,21 +47,35 @@ function renderDayNav(section, dateTs) {
 }
 
 // ── FEED ─────────────────────────────────────────────────────────────────────
+// Une tétée est listée sur chaque journée qu'elle chevauche. Les totaux ne comptent
+// que la part qui tombe ce jour-là (partOnDay, utils.js).
+
+/** Précision ajoutée à une plage horaire quand le chrono déborde de la journée affichée. */
+function rangeNote(l, dayStart) {
+  const sp = spanOf(l);
+  if (!sp) return '';
+  if (sp.start < dayStart)           return ' <span style="color:var(--text-muted)">· commencé la veille</span>';
+  if (sp.end > addDays(dayStart, 1)) return ' <span style="color:var(--text-muted)">· se termine le lendemain</span>';
+  return '';
+}
+
 function renderFeed() {
   const selDate = histDate.feed;
   document.getElementById('feed-daynav').innerHTML = renderDayNav('feed', selDate);
 
   const dayLogs = allLogs
-    .filter(l => l.type === 'feed' && startOfDay(l.timestamp || l.start) === selDate)
-    .sort((a, b) => (b.start || b.timestamp) - (a.start || a.timestamp));
+    .filter(l => l.type === 'feed' && logOnDay(l, selDate))
+    .sort((a, b) => b.start - a.start);
+
+  const dayMs = l => { const p = partOnDay(l, selDate); return p ? p.duration : 0; };
 
   document.getElementById('sum-feed-count').textContent = dayLogs.length;
-  document.getElementById('sum-feed-total').textContent = fmtDur(dayLogs.reduce((a,l) => a+(l.duration||0), 0));
+  document.getElementById('sum-feed-total').textContent = fmtDur(dayLogs.reduce((a, l) => a + dayMs(l), 0));
   ['left','right'].forEach(side => {
     const sl  = dayLogs.filter(l => l.side === side);
     const el  = document.getElementById('last-'+side);
     if (!sl.length) { el.textContent = ''; return; }
-    const last = sl[0]; // dayLogs is sorted most-recent-first
+    const last = sl[0]; // dayLogs est trié du plus récent au plus ancien
     el.textContent = fmtTime(last.start) + ' · ' + fmtDur(last.duration);
   });
 
@@ -71,7 +85,7 @@ function renderFeed() {
       '<div class="history-item' + (pendingSyncIds.has(l.id) ? ' pending' : '') + '" data-id="' + escapeHtml(l.id) + '">' +
       '<div class="h-dot ' + escapeHtml(l.side) + '"></div>' +
       '<div class="h-main"><div class="h-label">Sein ' + (l.side==='left'?'gauche':'droit') + '</div>' +
-      '<div class="h-range">' + fmtTime(l.start) + ' → ' + fmtTime(l.end) + '</div></div>' +
+      '<div class="h-range">' + fmtTime(l.start) + ' → ' + fmtTime(l.end) + rangeNote(l, selDate) + '</div></div>' +
       '<div class="h-dur">' + fmtDur(l.duration) + '</div><div class="h-edit-hint">✎</div>' +
       '</div>'
     ).join('') : '<div class="empty-state">Aucune tétée ce jour</div>') + '</div>';
@@ -79,16 +93,19 @@ function renderFeed() {
 }
 
 // ── SLEEP ─────────────────────────────────────────────────────────────────────
+// Un sommeil est listé sur chaque journée qu'il chevauche (ex. 23h → 2h : lundi et mardi).
 function renderSleep() {
   const selDate = histDate.sleep;
   document.getElementById('sleep-daynav').innerHTML = renderDayNav('sleep', selDate);
 
   const dayLogs = allLogs
-    .filter(l => l.type === 'sleep' && startOfDay(l.timestamp || l.start) === selDate)
-    .sort((a, b) => (b.start || b.timestamp) - (a.start || a.timestamp));
+    .filter(l => l.type === 'sleep' && logOnDay(l, selDate))
+    .sort((a, b) => b.start - a.start);
+
+  const dayMs = l => { const p = partOnDay(l, selDate); return p ? p.duration : 0; };
 
   document.getElementById('sum-sleep-count').textContent = dayLogs.length;
-  document.getElementById('sum-sleep-total').textContent = fmtDur(dayLogs.reduce((a,l) => a+(l.duration||0), 0));
+  document.getElementById('sum-sleep-total').textContent = fmtDur(dayLogs.reduce((a, l) => a + dayMs(l), 0));
 
   const el = document.getElementById('sleep-history');
   el.innerHTML = '<div class="history-list">' +
@@ -96,7 +113,7 @@ function renderSleep() {
       '<div class="history-item' + (pendingSyncIds.has(l.id) ? ' pending' : '') + '" data-id="' + escapeHtml(l.id) + '">' +
       '<div class="h-dot sleep"></div>' +
       '<div class="h-main"><div class="h-label">Sommeil</div>' +
-      '<div class="h-range">' + fmtTime(l.start) + ' → ' + fmtTime(l.end) + '</div></div>' +
+      '<div class="h-range">' + fmtTime(l.start) + ' → ' + fmtTime(l.end) + rangeNote(l, selDate) + '</div></div>' +
       '<div class="h-dur">' + fmtDur(l.duration) + '</div><div class="h-edit-hint">✎</div>' +
       '</div>'
     ).join('') : '<div class="empty-state">Aucun sommeil ce jour</div>') + '</div>';
@@ -133,31 +150,35 @@ function renderTimeline() {
   if (navEl) navEl.innerHTML = renderDayNav('timeline', tlDate);
 
   const dayStart = tlDate;
-  const dayEnd   = dayStart + 86400000;
-  const logs = allLogs.filter(l => startOfDay(l.timestamp || l.start) === dayStart);
+  const dayEnd   = addDays(dayStart, 1);       // minuit suivant : une journée peut faire 23 h ou 25 h
+  const dayLen   = dayEnd - dayStart;
+  // Un chrono est affiché sur chaque journée qu'il chevauche, pas seulement sur celle où il finit.
+  const logs = allLogs.filter(l => logOnDay(l, dayStart));
 
   if (!logs.length) {
     c.innerHTML = '<div class="empty-state">Aucune donnée ce jour</div>';
     return;
   }
 
-  // Position a single point-in-time within the visible day (0–100%), clamped to the day.
-  const pct = ts => +((Math.min(Math.max(ts, dayStart), dayEnd) - dayStart) / 86400000 * 100).toFixed(3);
+  // Position d'un instant dans la journée affichée (0–100 %), bornée à la journée.
+  const pct = ts => +((Math.min(Math.max(ts, dayStart), dayEnd) - dayStart) / dayLen * 100).toFixed(3);
 
-  // Position + width of a [start, start+duration] span, clipped to the visible day's
-  // midnight-to-midnight window. A feed/sleep that crosses midnight is truncated at the
-  // edge of whichever day it's shown on, instead of overflowing the track.
+  // Barre d'un chrono : seule sa part dans CETTE journée est dessinée.
   const barStyle = l => {
-    const s = Math.max(l.start, dayStart);
-    const e = Math.min(l.start + l.duration, dayEnd);
-    const left  = +((s - dayStart) / 86400000 * 100).toFixed(3);
-    const width = Math.max(0.8, +(Math.max(e - s, 0) / 86400000 * 100).toFixed(3));
-    return 'left:' + left + '%;width:' + width + '%';
+    const p     = partOnDay(l, dayStart);
+    const width = Math.max(0.8, +(((p ? p.duration : 0) / dayLen) * 100).toFixed(3));
+    const left  = Math.min(pct(p ? p.start : dayStart), 100 - width);
+    return 'left:' + left.toFixed(3) + '%;width:' + width.toFixed(3) + '%';
   };
 
-  const ticksHtml = [0,6,12,18,24].map(h =>
-    '<div class="tl-tick" style="left:' + (h/24*100).toFixed(1) + '%"><div class="tl-tick-line"></div><div class="tl-tick-lbl">' + String(h).padStart(2,'0') + 'h</div></div>'
-  ).join('');
+  // Repères toutes les 6 h à l'heure locale réelle (une journée de changement d'heure n'a pas 24 h).
+  const ticksHtml = [0, 6, 12, 18, 24].map(h => {
+    const t = new Date(dayStart);
+    t.setHours(h, 0, 0, 0);
+    const left = ((t.getTime() - dayStart) / dayLen * 100).toFixed(1);
+    return '<div class="tl-tick" style="left:' + left + '%"><div class="tl-tick-line"></div>' +
+      '<div class="tl-tick-lbl">' + String(h).padStart(2,'0') + 'h</div></div>';
+  }).join('');
   const fl = logs.filter(l => l.type === 'feed');
   const sl = logs.filter(l => l.type === 'sleep');
   const dl = logs.filter(l => l.type === 'diaper');
@@ -390,35 +411,39 @@ function renderStats() {
   if (!el) return;
 
   const N = statsRangeDays;
-  const today = new Date();
+  // Fenêtre = N journées civiles locales, de minuit à minuit, aujourd'hui inclus.
   const days = [];
-  for (let i = N - 1; i >= 0; i--) {
-    const d = new Date(today);
-    d.setDate(today.getDate() - i);
-    days.push(d.toDateString());
-  }
+  for (let i = N - 1; i >= 0; i--) days.push(addDays(todayStart(), -i));
+  const dayKeys     = days.map(ts => new Date(ts).toDateString());
+  const windowStart = days[0];
 
-  // ── Single-pass aggregation — O(allLogs) instead of O(30 × allLogs) ────────
-  // Pre-build a map: dateString → accumulated stats
-  const cutoffTs = today.getTime() - N * 86400000;
   const statsMap = {};
-  days.forEach(dk => {
+  dayKeys.forEach(dk => {
     statsMap[dk] = { feedLeft: 0, feedRight: 0, feedCount: 0, sleepMs: 0, wet: 0, dirty: 0, mixed: 0, bottleVol: 0 };
   });
 
   allLogs.forEach(l => {
-    const ts = l.start || l.timestamp;
-    if (!ts || ts < cutoffTs) return;          // skip logs outside the window
-    const dk = new Date(ts).toDateString();
-    const bucket = statsMap[dk];
-    if (!bucket) return;                       // day not in our N-day window
-    if (l.type === 'feed') {
-      if (l.side === 'left')  bucket.feedLeft  += (l.duration || 0);
-      else                    bucket.feedRight += (l.duration || 0);
-      bucket.feedCount++;
-    } else if (l.type === 'sleep') {
-      bucket.sleepMs += (l.duration || 0);
-    } else if (l.type === 'diaper') {
+    if (l.type === 'feed' || l.type === 'sleep') {
+      // Un chrono est réparti entre les journées qu'il traverse : chaque morceau va dans son jour.
+      splitByDay(l).forEach((p, idx) => {
+        const bucket = statsMap[new Date(p.dayStart).toDateString()];
+        if (!bucket) return;                                    // hors fenêtre
+        if (l.type === 'feed') {
+          if (l.side === 'left') bucket.feedLeft  += p.duration;
+          else                   bucket.feedRight += p.duration;
+          if (idx === 0) bucket.feedCount++;                    // une tétée se compte le jour où elle commence
+        } else {
+          bucket.sleepMs += p.duration;
+        }
+      });
+      return;
+    }
+    // Couches et biberons : événements ponctuels, rattachés au jour de leur timestamp.
+    const t = Number(l.timestamp);
+    if (!t || t < windowStart) return;
+    const bucket = statsMap[new Date(t).toDateString()];
+    if (!bucket) return;
+    if (l.type === 'diaper') {
       if      (l.diaperType === 'wet')   bucket.wet++;
       else if (l.diaperType === 'dirty') bucket.dirty++;
       else if (l.diaperType === 'mixed') bucket.mixed++;
@@ -427,14 +452,14 @@ function renderStats() {
     }
   });
 
-  const feedLeftMin  = days.map(dk => statsMap[dk].feedLeft  / 60000);
-  const feedRightMin = days.map(dk => statsMap[dk].feedRight / 60000);
-  const feedCountArr = days.map(dk => statsMap[dk].feedCount);
-  const sleepH       = days.map(dk => statsMap[dk].sleepMs   / 3600000);
-  const dWet         = days.map(dk => statsMap[dk].wet);
-  const dDirty       = days.map(dk => statsMap[dk].dirty);
-  const dMixed       = days.map(dk => statsMap[dk].mixed);
-  const bottleVolMl  = days.map(dk => statsMap[dk].bottleVol);
+  const feedLeftMin  = dayKeys.map(dk => statsMap[dk].feedLeft  / 60000);
+  const feedRightMin = dayKeys.map(dk => statsMap[dk].feedRight / 60000);
+  const feedCountArr = dayKeys.map(dk => statsMap[dk].feedCount);
+  const sleepH       = dayKeys.map(dk => statsMap[dk].sleepMs   / 3600000);
+  const dWet         = dayKeys.map(dk => statsMap[dk].wet);
+  const dDirty       = dayKeys.map(dk => statsMap[dk].dirty);
+  const dMixed       = dayKeys.map(dk => statsMap[dk].mixed);
+  const bottleVolMl  = dayKeys.map(dk => statsMap[dk].bottleVol);
 
   // ── Feed chart ────────────────────────────────────────────────────────────
   const feedData = days.map((_, i) => ({ segments: [
@@ -466,9 +491,9 @@ function renderStats() {
   ]}));
   const diaperMax = niceMax(Math.max(...diaperData.map(d => d.segments.reduce((a, s) => a + s.val, 0))));
 
-  // ── Heatmap logs ──────────────────────────────────────────────────────────
-  const feedLogsN  = allLogs.filter(l => l.type === 'feed'  && (l.start || 0) >= cutoffTs);
-  const sleepLogsN = allLogs.filter(l => l.type === 'sleep' && (l.start || 0) >= cutoffTs);
+  // ── Heatmap logs : le filtrage par fenêtre se fait dans la heatmap ─────────
+  const feedLogsN  = allLogs.filter(l => l.type === 'feed');
+  const sleepLogsN = allLogs.filter(l => l.type === 'sleep');
   const rangeLabel = `${N} derniers jours`;
 
   el.innerHTML =
@@ -509,15 +534,16 @@ function renderStats() {
 }
 
 // ── RHYTHM HEATMAP (generic) ──────────────────────────────────────────────────
-// Draws all logs from the last N days onto a 0h–24h axis with low opacity.
-// Dense zones emerge from additive transparency: opacity = 1-(1-α)^n
-// Options: { color, alpha, minPx, useDuration, caption(n, nDays) }
+// Axe 0h–24h commun à toutes les journées de la fenêtre, à faible opacité.
+// Chaque morceau de chrono est placé sur l'axe de SA journée (heure locale) : un sommeil
+// 23h → 2h donne une barre à droite (23h–24h) le premier jour et une à gauche (0h–2h) le lendemain.
+// Options : { color, alpha, minPx, useDuration, caption(n, nDays) }
 function buildRhythmHeatmapSVG(logs, N, { color, alpha, minPx, useDuration, caption }) {
   const W = 340, H = 88;
   const padL = 8, padR = 8, padT = 10, padB = 22;
   const plotW = W - padL - padR;
   const trackH = H - padT - padB;
-  const DAY_MS = 86400000;
+  const windowStart = addDays(todayStart(), -(N - 1));
 
   let svg = `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" style="width:100%;display:block">`;
   svg += `<rect x="${padL}" y="${padT}" width="${plotW}" height="${trackH}" fill="${color}" fill-opacity="0.05" rx="4"/>`;
@@ -528,21 +554,27 @@ function buildRhythmHeatmapSVG(logs, N, { color, alpha, minPx, useDuration, capt
     svg += `<text x="${x}" y="${H - 4}" text-anchor="middle" font-size="7" fill="var(--text-muted)" font-family="-apple-system,sans-serif">${String(h).padStart(2,'0')}h</text>`;
   });
 
+  const days = new Set();
+  let nLogs = 0;
   logs.forEach(l => {
-    const d   = new Date(l.start);
-    const sec = d.getHours() * 3600 + d.getMinutes() * 60 + d.getSeconds();
-    const x   = +(padL + (sec / 86400) * plotW).toFixed(2);
-    const w   = useDuration
-      ? Math.max((l.duration || 0) / DAY_MS * plotW, minPx).toFixed(2)
-      : minPx.toFixed(2);
-    svg += `<rect x="${x}" y="${padT}" width="${w}" height="${trackH}" fill="${color}" fill-opacity="${alpha}" rx="2"/>`;
+    let counted = false;
+    splitByDay(l).forEach(p => {
+      if (p.dayStart < windowStart) return;
+      const len  = addDays(p.dayStart, 1) - p.dayStart;     // longueur réelle de la journée
+      const x0   = padL + ((p.start - p.dayStart) / len) * plotW;
+      const wRaw = useDuration ? (p.duration / len) * plotW : minPx;
+      const w    = Math.max(0, Math.min(Math.max(wRaw, minPx), padL + plotW - x0));
+      svg += `<rect x="${x0.toFixed(2)}" y="${padT}" width="${w.toFixed(2)}" height="${trackH}" fill="${color}" fill-opacity="${alpha}" rx="2"/>`;
+      days.add(p.dayStart);
+      counted = true;
+    });
+    if (counted) nLogs++;
   });
 
   svg += '</svg>';
 
-  const nDays = Math.min(N, new Set(logs.map(l => new Date(l.start).toDateString())).size);
-  const cap = logs.length
-    ? `<div class="stats-heatmap-caption">${caption(logs.length, nDays)}</div>`
+  const cap = nLogs
+    ? `<div class="stats-heatmap-caption">${caption(nLogs, days.size)}</div>`
     : `<div class="stats-heatmap-caption empty">Aucune donnée sur ${N} jour${N > 1 ? 's' : ''}</div>`;
 
   return svg + cap;

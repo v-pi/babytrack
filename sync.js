@@ -102,7 +102,7 @@ async function fetchLogsPaginated(since, excludeDeleted) {
     if (error) throw error;
     if (!data || data.length === 0) break;
 
-    all.push(...data);
+    all.push(...data.map(normalizeLogRow));
     if (data.length < PAGE) break; // dernière page — pas la peine d'en demander une autre
     from += PAGE;
   }
@@ -431,6 +431,7 @@ function setupRealtime() {
     }, () => { syncTimersFromRemote(); })
     .on('postgres_changes', { event: '*', schema: 'public', table: 'logs', filter: `family_id=eq.${familyId}` }, ({ eventType, new: n, old: o }) => {
       if (eventType === 'INSERT' || eventType === 'UPDATE') {
+        n = normalizeLogRow(n);   // Realtime envoie les bigint en chaînes
         if (pendingSyncIds.has(n.id)) return; // Ignorer l'écho de sa propre action
         if (n.deleted) {
           // Soft delete distant reçu en temps réel

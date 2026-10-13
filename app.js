@@ -454,8 +454,8 @@ function showToast(msg) {
 function exportCSV() {
   if (!allLogs.length) { showToast('Rien à exporter'); return; }
   const rows = [['date','heure','type','detail','duree']];
-  [...allLogs].sort((a,b) => (a.timestamp||a.start)-(b.timestamp||b.start)).forEach(l => {
-    const ts = l.timestamp || l.start;
+  [...allLogs].sort((a,b) => anchorOf(a)-anchorOf(b)).forEach(l => {
+    const ts = anchorOf(l);   // début pour un chrono : la session est datée à son commencement
     rows.push([
       new Date(ts).toLocaleDateString('fr-FR'), fmtTime(ts),
       l.type==='feed'   ? 'allaitement' :
