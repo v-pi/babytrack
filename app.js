@@ -307,6 +307,38 @@ function applyCustomStatsRange() {
   setStatsRange(v);
 }
 
+// ── TIMELINE RANGE (calendrier : 7, 14, 30, 60, 90 j ou autre) ───────────────
+function setTlRange(days) {
+  const n = Math.max(2, Math.min(365, Math.round(days)));
+  const wrap = document.getElementById('tl-range-custom');
+  if (wrap) wrap.classList.remove('shown');
+  if (n === tlRangeDays) return;
+  tlRangeDays = n;
+  try { localStorage.setItem('bt_tl_range_days', String(n)); } catch { /* stockage indisponible */ }
+  renderTimeline();
+}
+
+function toggleTlRangeCustom() {
+  const wrap = document.getElementById('tl-range-custom');
+  if (!wrap) return;
+  wrap.classList.toggle('shown');
+  if (wrap.classList.contains('shown')) {
+    const input = document.getElementById('tl-range-custom-input');
+    if (input) { input.value = tlRangeDays; input.focus(); input.select(); }
+  }
+}
+
+function applyCustomTlRange() {
+  const input = document.getElementById('tl-range-custom-input');
+  if (!input) return;
+  const v = parseInt(input.value, 10);
+  if (!Number.isFinite(v) || v < 2 || v > 365) {
+    showToast('Choisis une durée entre 2 et 365 jours');
+    return;
+  }
+  setTlRange(v);
+}
+
 // ── COUCHES ───────────────────────────────────────────────────────────────────
 function toggleDiaper(type) {
   diaperSelection[type] = !diaperSelection[type];
@@ -742,7 +774,7 @@ document.addEventListener('visibilitychange', () => {
 // ── SWIPE (all sections, unified) ────────────────────────────────────────────
 (function setupDaySwipe() {
   [['section-feed','feed'],['section-bottle','bottle'],['section-sleep','sleep'],
-   ['section-diaper','diaper'],['section-timeline','timeline']].forEach(([id, section]) => {
+   ['section-diaper','diaper']].forEach(([id, section]) => {
     const el = document.getElementById(id);
     let sx = 0, sy = 0;
     el.addEventListener('touchstart', e => {

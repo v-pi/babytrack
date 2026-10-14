@@ -143,51 +143,144 @@ function renderDiapers() {
     ).join('') : '<div class="empty-state">Aucun changement ce jour</div>') + '</div>';
 }
 
-// ── TIMELINE ─────────────────────────────────────────────────────────────────
-function renderTimeline() {
-  const c = document.getElementById('timeline-container');
-  const navEl = document.getElementById('tl-day-nav');
-  if (navEl) navEl.innerHTML = renderDayNav('timeline', tlDate);
+// ── TIMELINE : N derniers jours glissants (calendrier) ───────────────────────
+// Une ligne par journée, la plus récente en haut. Sur chaque ligne, les trois types
+// partagent une même piste de 24 h : sommeil en fond vert, tétées en barres
+// (gauche / droite), couches en points. La fenêtre se cale sur aujourd'hui et glisse
+// avec le temps. La durée se choisit comme dans les stats (7, 14, 30, 60, 90 j ou autre).
+const TL_RANGE_PRESETS = [7, 14, 30, 60, 90];
+const TL_RANGE_DEFAULT = 14;
 
-  const dayStart = tlDate;
-  const dayEnd   = addDays(dayStart, 1);       // minuit suivant : une journée peut faire 23 h ou 25 h
-  const dayLen   = dayEnd - dayStart;
-  // Un chrono est affiché sur chaque journée qu'il chevauche, pas seulement sur celle où il finit.
-  const logs = allLogs.filter(l => logOnDay(l, dayStart));
+function readTlRangeDays() {
+  try {
+    const v = parseInt(localStorage.getItem('bt_tl_range_days'), 10);
+    return (Number.isFinite(v) && v >= 2 && v <= 365) ? v : TL_RANGE_DEFAULT;
+  } catch { return TL_RANGE_DEFAULT; }
+}
+let tlRangeDays = readTlRangeDays();
 
-  if (!logs.length) {
-    c.innerHTML = '<div class="empty-state">Aucune donnée ce jour</div>';
-    return;
+/** Fin d'un log : son champ end, ou start + duration à défaut. */
+function tlEndOf(l) {
+  return Number(l.end) || (Number(l.start) + Number(l.duration));
+}
+
+/**
+ * Plage réellement tracée pour un log. Une tétée va de son début à sa fin réelles
+ * (pauses comprises), comme dans l'historique : le champ duration ne compte que le temps actif.
+ */
+function tlSpanLog(l) {
+  if (l.type === 'feed' && Number(l.end) > Number(l.start)) {
+    return { ...l, duration: Number(l.end) - Number(l.start) };
   }
+  return l;
+}
 
-  // Position d'un instant dans la journée affichée (0–100 %), bornée à la journée.
-  const pct = ts => +((Math.min(Math.max(ts, dayStart), dayEnd) - dayStart) / dayLen * 100).toFixed(3);
+/** Position (en %) de l'heure h dans la journée commençant à dayStart (tient compte des 23 h / 25 h). */
+function tlHourPct(dayStart, h) {
+  const dayLen = addDays(dayStart, 1) - dayStart;
+  const t = new Date(dayStart);
+  t.setHours(h, 0, 0, 0);
+  return +((t.getTime() - dayStart) / dayLen * 100).toFixed(3);
+}
 
-  // Barre d'un chrono : seule sa part dans CETTE journée est dessinée.
-  const barStyle = l => {
-    const p     = partOnDay(l, dayStart);
-    const width = Math.max(0.8, +(((p ? p.duration : 0) / dayLen) * 100).toFixed(3));
-    const left  = Math.min(pct(p ? p.start : dayStart), 100 - width);
+/** Une ligne du calendrier : tétées, sommeils et couches de la journée commençant à dayStart. */
+function tlRowHTML(dayStart, isToday) {
+  const dayEnd = addDays(dayStart, 1);
+  const dayLen = dayEnd - dayStart;
+  const pct    = ts => +((Math.min(Math.max(ts, dayStart), dayEnd) - dayStart) / dayLen * 100).toFixed(3);
+
+  // Largeur minimale pour rester visible, élargie AUTOUR du moment réel (pas vers la droite).
+  const segStyle = (p, minW) => {
+    const real  = (p.duration / dayLen) * 100;
+    const width = Math.max(minW, real);
+    const left  = Math.min(Math.max(pct(p.start) - (width - real) / 2, 0), 100 - width);
     return 'left:' + left.toFixed(3) + '%;width:' + width.toFixed(3) + '%';
   };
 
-  // Repères toutes les 6 h à l'heure locale réelle (une journée de changement d'heure n'a pas 24 h).
-  const ticksHtml = [0, 6, 12, 18, 24].map(h => {
-    const t = new Date(dayStart);
-    t.setHours(h, 0, 0, 0);
-    const left = ((t.getTime() - dayStart) / dayLen * 100).toFixed(1);
-    return '<div class="tl-tick" style="left:' + left + '%"><div class="tl-tick-line"></div>' +
-      '<div class="tl-tick-lbl">' + String(h).padStart(2,'0') + 'h</div></div>';
+  const logs = allLogs.filter(l => logOnDay(tlSpanLog(l), dayStart));
+
+  const grid = [6, 12, 18].map(h =>
+    '<div class="tl-gl" style="left:' + tlHourPct(dayStart, h) + '%"></div>'
+  ).join('');
+
+  const sleep = logs.filter(l => l.type === 'sleep').map(l => {
+    const p = partOnDay(tlSpanLog(l), dayStart);
+    if (!p) return '';
+    const title = 'Sommeil · ' + fmtTime(l.start) + ' → ' + fmtTime(tlEndOf(l)) + ' · ' + fmtDur(l.duration);
+    return '<div class="tl-sleep" title="' + escapeHtml(title) + '" style="' + segStyle(p, 0.8) + '"></div>';
   }).join('');
-  const fl = logs.filter(l => l.type === 'feed');
-  const sl = logs.filter(l => l.type === 'sleep');
-  const dl = logs.filter(l => l.type === 'diaper');
-  c.innerHTML = '<div class="timeline-day"><div class="tl-body" style="padding-top:20px">' +
-    '<div class="tl-ticks-row"><div class="tl-tick-spacer"></div><div class="tl-ticks">' + ticksHtml + '</div></div>' +
-    (fl.length ? '<div class="tl-row"><div class="tl-row-label">🤱</div><div class="tl-track feed-track">' + fl.map(l=>'<div class="tl-bar ' + escapeHtml(l.side) + '" style="' + barStyle(l) + '"></div>').join('') + '</div></div>' : '') +
-    (sl.length ? '<div class="tl-row"><div class="tl-row-label">🌙</div><div class="tl-track sleep-track">' + sl.map(l=>'<div class="tl-bar sleep" style="' + barStyle(l) + '"></div>').join('') + '</div></div>' : '') +
-    (dl.length ? '<div class="tl-row"><div class="tl-row-label">💧</div><div class="tl-track diaper-track">' + dl.map(l=>'<div class="tl-dot ' + escapeHtml(l.diaperType) + '" style="left:' + pct(l.timestamp) + '%"></div>').join('') + '</div></div>' : '') +
+
+  const feed = logs.filter(l => l.type === 'feed').map(l => {
+    const p = partOnDay(tlSpanLog(l), dayStart);
+    if (!p) return '';
+    const side  = l.side === 'left' ? 'left' : 'right';
+    const title = (side === 'left' ? 'Sein gauche' : 'Sein droit') + ' · ' +
+      fmtTime(l.start) + ' → ' + fmtTime(tlEndOf(l)) + ' · ' + fmtDur(l.duration);
+    return '<div class="tl-feed ' + side + '" title="' + escapeHtml(title) + '" style="' + segStyle(p, 1.2) + '"></div>';
+  }).join('');
+
+  const diaper = logs.filter(l => l.type === 'diaper').map(l => {
+    const kind  = l.diaperType === 'dirty' ? 'dirty' : l.diaperType === 'mixed' ? 'mixed' : 'wet';
+    const label = (kind === 'wet' ? 'Pipi' : kind === 'dirty' ? 'Selle' : 'Mixte') + ' · ' + fmtTime(l.timestamp);
+    return '<div class="tl-dia ' + kind + '" title="' + escapeHtml(label) + '" style="left:' + pct(Number(l.timestamp)) + '%"></div>';
+  }).join('');
+
+  const now = isToday ? '<div class="tl-now" style="left:' + pct(Date.now()) + '%"></div>' : '';
+
+  const d   = new Date(dayStart);
+  const dow = d.toLocaleDateString('fr-FR', { weekday: 'short' }).replace('.', '');
+
+  return '<div class="tl-row' + (isToday ? ' is-today' : '') + '">' +
+    '<div class="tl-lbl"><span class="tl-dow">' + dow + '</span><span class="tl-num">' + d.getDate() + '</span></div>' +
+    '<div class="tl-trk">' + grid + sleep + feed + diaper + now + '</div>' +
+    '</div>';
+}
+
+/** Sélecteur de durée du calendrier : mêmes classes et même comportement que celui des stats. */
+function buildTlRangeSelector(N) {
+  const isCustom = !TL_RANGE_PRESETS.includes(N);
+  const pills = TL_RANGE_PRESETS.map(d =>
+    `<button class="range-btn${d === N ? ' active' : ''}" onclick="setTlRange(${d})">${d}j</button>`
+  ).join('');
+  return `<div class="stats-range">
+    ${pills}
+    <button class="range-btn range-btn--custom${isCustom ? ' active' : ''}" onclick="toggleTlRangeCustom()" title="Durée personnalisée">
+      ${isCustom ? N + 'j' : '✎ Autre'}
+    </button>
+    <div class="stats-range-custom" id="tl-range-custom">
+      <input type="number" id="tl-range-custom-input" min="2" max="365" step="1"
+             inputmode="numeric" placeholder="Jours" value="${N}"
+             onkeydown="if(event.key==='Enter')applyCustomTlRange()"/>
+      <button class="range-btn range-btn--ok" onclick="applyCustomTlRange()">OK</button>
+    </div>
+  </div>`;
+}
+
+function renderTimeline() {
+  const c     = document.getElementById('timeline-container');
+  const navEl = document.getElementById('tl-day-nav');
+  if (!c) return;
+
+  const N     = tlRangeDays;
+  const today = todayStart();
+  // Du plus récent au plus ancien : aujourd'hui en haut.
+  const days  = Array.from({ length: N }, (_, i) => addDays(today, -i));
+  const short = ts => new Date(ts).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' });
+
+  if (navEl) {
+    navEl.innerHTML = buildTlRangeSelector(N) +
+      '<div class="tl-range">' + N + ' derniers jours · ' + short(days[N - 1]) + ' → ' + short(days[0]) + '</div>';
+  }
+
+  // Axe commun, calé sur aujourd'hui (même largeur de colonne que les lignes).
+  const axis = '<div class="tl-axis"><div class="tl-lbl"></div><div class="tl-axis-track">' +
+    [6, 12, 18].map(h => '<span style="left:' + tlHourPct(today, h) + '%">' + String(h).padStart(2, '0') + 'h</span>').join('') +
     '</div></div>';
+
+  const dense = N > 31 ? ' tl-week--dense' : '';
+  c.innerHTML = '<div class="tl-week' + dense + '">' + axis +
+    days.map((ts, i) => tlRowHTML(ts, i === 0)).join('') +
+    '</div>';
 }
 
 // ── BOTTLE ────────────────────────────────────────────────────────────────────

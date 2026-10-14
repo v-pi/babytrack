@@ -256,28 +256,37 @@ body{
 }
 .day-nav-label:active{opacity:.5}
 .day-nav-caret{font-size:9px;color:var(--text-muted)}
-.timeline-day{background:var(--card);border-radius:var(--radius);margin-bottom:12px;box-shadow:var(--shadow)}
-.tl-body{padding:4px 14px 14px;display:flex;flex-direction:column;gap:8px}
-.tl-ticks-row{display:flex;align-items:center;gap:8px}
-.tl-tick-spacer{width:22px;flex-shrink:0}
-.tl-ticks{position:relative;flex:1;height:16px}
-.tl-tick{position:absolute;display:flex;flex-direction:column;align-items:center}
-.tl-tick-line{width:1px;height:5px;background:var(--border)}
-.tl-tick-lbl{font-size:9px;color:var(--text-muted);transform:translateX(-50%);white-space:nowrap;margin-top:1px}
-.tl-row{display:flex;align-items:center;gap:8px}
-.tl-row-label{font-size:15px;width:22px;flex-shrink:0;text-align:center}
-.tl-track{position:relative;flex:1;height:14px;border-radius:7px}
-.tl-track.feed-track{background:#fdf0f6}
-.tl-track.sleep-track{background:#eaf7f1}
-.tl-track.diaper-track{background:var(--bg);height:16px;border-radius:8px}
-.tl-bar{position:absolute;top:50%;transform:translateY(-50%);border-radius:4px;min-width:5px;height:10px}
-.tl-bar.left{background:var(--pink);opacity:.9}
-.tl-bar.right{background:var(--blue);opacity:.9}
-.tl-bar.sleep{background:var(--green);opacity:.8;border-radius:5px}
-.tl-dot{position:absolute;top:50%;transform:translate(-50%,-50%);width:11px;height:11px;border-radius:50%;border:2px solid var(--card)}
-.tl-dot.wet{background:var(--blue)}
-.tl-dot.dirty{background:var(--amber)}
-.tl-dot.mixed{background:linear-gradient(135deg, var(--blue) 50%, var(--amber) 50%)}
+/* ── CALENDRIER : N derniers jours, une piste de 24 h par journée ── */
+.tl-range{text-align:center;font-size:12px;color:var(--text-muted);padding:10px 0 12px}
+.tl-week{background:var(--card);border-radius:var(--radius);box-shadow:var(--shadow);padding:14px 14px 6px}
+.tl-axis,.tl-row{display:flex;align-items:center;gap:10px}
+.tl-axis{margin-bottom:4px}
+.tl-row{margin-bottom:8px}
+.tl-lbl{width:34px;flex-shrink:0;display:flex;flex-direction:column;align-items:center;gap:3px}
+.tl-dow{font-size:10px;color:var(--text-muted);text-transform:capitalize;line-height:1}
+.tl-num{width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;color:var(--text)}
+.tl-row.is-today .tl-num{background:var(--pink);color:#fff}
+.tl-axis-track{position:relative;flex:1;height:14px}
+.tl-axis-track span{position:absolute;top:0;transform:translateX(-50%);font-size:9px;color:var(--text-muted);white-space:nowrap}
+.tl-trk{position:relative;flex:1;height:26px;border-radius:9px;background:var(--bg)}
+.tl-gl{position:absolute;top:0;bottom:0;width:1px;background:var(--border)}
+.tl-sleep{position:absolute;top:0;bottom:0;border-radius:9px;background:var(--green);opacity:.28}
+.tl-feed{position:absolute;top:50%;height:12px;transform:translateY(-50%);border-radius:5px;box-shadow:0 0 0 1.5px var(--card)}
+.tl-feed.left{background:var(--pink)}
+.tl-feed.right{background:var(--blue)}
+.tl-dia{position:absolute;top:50%;width:11px;height:11px;transform:translate(-50%,-50%);box-sizing:border-box;border-radius:50%;border:2px solid var(--card)}
+.tl-dia.wet{background:var(--blue)}
+.tl-dia.dirty{background:var(--amber)}
+.tl-dia.mixed{background:linear-gradient(135deg,var(--blue) 50%,var(--amber) 50%)}
+.tl-now{position:absolute;top:-4px;bottom:-4px;width:2px;margin-left:-1px;border-radius:2px;background:var(--text);opacity:.5}
+.tl-leg-bar.sleep{opacity:.4}
+/* Plus de 31 jours : pistes plus fines pour tenir à l'écran */
+.tl-week--dense .tl-trk{height:16px;border-radius:6px}
+.tl-week--dense .tl-sleep{border-radius:6px}
+.tl-week--dense .tl-feed{height:9px;border-radius:4px}
+.tl-week--dense .tl-dia{width:9px;height:9px}
+.tl-week--dense .tl-num{width:20px;height:20px;font-size:11px}
+.tl-week--dense .tl-row{margin-bottom:4px}
 .tl-legend{display:flex;flex-wrap:wrap;gap:10px;padding:10px 14px;border-top:1px solid var(--border)}
 .tl-leg-item{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--text-muted)}
 .tl-leg-bar{width:14px;height:8px;border-radius:3px}
