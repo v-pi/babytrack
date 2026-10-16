@@ -271,7 +271,12 @@ async function syncTimersFromRemote() {
       if (error || !rows) break;
       // Une action locale a eu lieu pendant la lecture : la réponse peut être périmée, on relit.
       if (epoch !== timerEpoch) { timerSyncAgain = true; continue; }
-      reconcileTimers(rows);
+      // Sessions locales terminées ailleurs : on récupère le log que l'autre appareil a déjà écrit.
+      const endedElsewhere = await fetchEndedElsewhere(rows);
+      if (!endedElsewhere) break;
+      if (epoch !== timerEpoch) { timerSyncAgain = true; continue; }
+      for (const row of endedElsewhere.values()) await storeServerLog(row);
+      reconcileTimers(rows, endedElsewhere);
     } while (timerSyncAgain);
   } finally {
     timerSyncBusy = false;
@@ -326,11 +331,48 @@ function adoptRemote(r) {
 }
 
 /**
+ * Sessions locales vues ici puis absentes du serveur : elles se sont terminées ailleurs.
+ * Retourne, par sid, le log que l'autre appareil a déjà écrit (null en cas d'erreur réseau).
+ * Un log supprimé (soft delete) compte aussi : il ne doit pas ressusciter.
+ */
+async function fetchEndedElsewhere(rows) {
+  const onServer = new Set(rows.map(r => r.session_id));
+  const gone = allLocalSessions().filter(l => l.s.seen && !onServer.has(l.s.sid) && !pendingTimers[l.key]);
+  const found = new Map();
+  for (const l of gone) {
+    const { data, error } = await supabaseClient.from('logs').select('*').eq('id', l.s.sid).maybeSingle();
+    if (error) return null;
+    if (data) found.set(l.s.sid, normalizeLogRow(data));
+  }
+  return found;
+}
+
+/** Range dans allLogs et IndexedDB la version serveur d'un log (ou le retire s'il est supprimé). */
+async function storeServerLog(row) {
+  if (pendingSyncIds.has(row.id)) return;   // une modification locale non envoyée fait foi
+  if (row.deleted) {
+    allLogs = allLogs.filter(l => l.id !== row.id);
+    await dbDel(row.id);
+  } else {
+    const idx = allLogs.findIndex(l => l.id === row.id);
+    if (idx >= 0) allLogs[idx] = row; else allLogs.push(row);
+    await dbPut(row);
+  }
+  renderCurrentTab();
+}
+
+/**
  * Compare l'état serveur à l'état local et converge vers une seule session active
  * (la plus récente). Les écritures en attente font foi : on n'applique rien sur leur clé.
  */
-function reconcileTimers(rows) {
+function reconcileTimers(rows, endedElsewhere = new Map()) {
   const remote = normalizeRemoteRows(rows);
+
+  // 0. Session terminée ailleurs dont le log existe déjà : on la retire sans rien réécrire,
+  // sinon l'heure de fin de l'autre appareil serait remplacée par celle de cette synchro.
+  for (const l of allLocalSessions()) {
+    if (endedElsewhere.has(l.s.sid)) dropLocalSession(l);
+  }
 
   // 1. Chaque session distante
   for (const r of remote) {

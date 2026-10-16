@@ -212,6 +212,14 @@ function closeLocal(l, endTs, deleteRow = true) {
   if (deleteRow) queueTimerJob({ op: 'delete', type: l.type, side: l.side, sid: s.sid });
 }
 
+/** Retire une session locale sans rien écrire : son log existe déjà (écrit par un autre appareil). */
+function dropLocalSession(l) {
+  markClosed(l.s.sid);
+  if (l.type === 'feed') breastActive[l.side] = null;
+  else sleepActive = null;
+  commitTimerChange(l.type, l.side);
+}
+
 /** Termine toutes les sessions actives, sauf celle désignée par exceptType / exceptSide. */
 function stopAllActive(exceptType, exceptSide) {
   const now = Date.now();
