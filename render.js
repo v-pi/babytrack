@@ -159,6 +159,73 @@ function readTlRangeDays() {
 }
 let tlRangeDays = readTlRangeDays();
 
+// ── CALENDRIER : types affichés (légende cliquable) ─────────────────────────
+// Clés : feed-left, feed-right, sleep, wet, dirty. Une clé présente = type masqué.
+// Mixte n'a pas d'entrée propre : il reste visible tant que Pipi ou Selle l'est.
+const TL_KINDS = ['feed-left', 'feed-right', 'sleep', 'wet', 'dirty'];
+
+function readTlHidden() {
+  try {
+    const arr = JSON.parse(localStorage.getItem('bt_tl_hidden') || '[]');
+    return new Set(Array.isArray(arr) ? arr.filter(k => TL_KINDS.includes(k)) : []);
+  } catch { return new Set(); }
+}
+let tlHidden = readTlHidden();
+
+/** Le log doit-il apparaître dans le calendrier, selon la légende ? */
+function tlLogShown(l) {
+  if (l.type === 'sleep') return !tlHidden.has('sleep');
+  if (l.type === 'feed')  return !tlHidden.has(l.side === 'left' ? 'feed-left' : 'feed-right');
+  if (l.type === 'diaper') {
+    if (l.diaperType === 'dirty') return !tlHidden.has('dirty');
+    if (l.diaperType === 'mixed') return !(tlHidden.has('wet') && tlHidden.has('dirty'));
+    return !tlHidden.has('wet');
+  }
+  return false; // biberons : absents du calendrier
+}
+
+/** Reflète dans la légende (boutons statiques de index.html) les types masqués. */
+function syncTlLegend() {
+  document.querySelectorAll('[data-tl-kind]').forEach(b => {
+    const shown = !tlHidden.has(b.dataset.tlKind);
+    b.classList.toggle('off', !shown);
+    b.setAttribute('aria-pressed', String(shown));
+  });
+}
+
+// ── CALENDRIER : infobulle (tap sur mobile, survol sur ordinateur) ──────────
+// Le title natif ne s'affiche pas au doigt : le détail est dans data-tip,
+// affiché par une bulle unique positionnée sous ou au-dessus du segment touché.
+let tlTipEl = null, tlTipTarget = null, tlTipTimer = null;
+
+function showTlTip(seg, auto) {
+  if (!tlTipEl) {
+    tlTipEl = document.createElement('div');
+    tlTipEl.className = 'tl-tip';
+    tlTipEl.setAttribute('role', 'tooltip');
+    document.body.appendChild(tlTipEl);
+  }
+  clearTimeout(tlTipTimer);
+  tlTipTarget = seg;
+  tlTipEl.textContent = seg.dataset.tip;
+  tlTipEl.classList.add('show');
+
+  const r = seg.getBoundingClientRect();
+  const w = tlTipEl.offsetWidth, h = tlTipEl.offsetHeight, m = 8;
+  const left  = Math.min(Math.max(r.left + r.width / 2 - w / 2, m), window.innerWidth - w - m);
+  const above = r.top - h - 10;
+  tlTipEl.style.left = left + 'px';
+  tlTipEl.style.top  = (above >= m ? above : r.bottom + 10) + 'px';
+
+  if (auto) tlTipTimer = setTimeout(hideTlTip, 3000);
+}
+
+function hideTlTip() {
+  clearTimeout(tlTipTimer);
+  tlTipTarget = null;
+  if (tlTipEl) tlTipEl.classList.remove('show');
+}
+
 /** Fin d'un log : son champ end, ou start + duration à défaut. */
 function tlEndOf(l) {
   return Number(l.end) || (Number(l.start) + Number(l.duration));
@@ -197,7 +264,7 @@ function tlRowHTML(dayStart, isToday) {
     return 'left:' + left.toFixed(3) + '%;width:' + width.toFixed(3) + '%';
   };
 
-  const logs = allLogs.filter(l => logOnDay(tlSpanLog(l), dayStart));
+  const logs = allLogs.filter(l => tlLogShown(l) && logOnDay(tlSpanLog(l), dayStart));
 
   const grid = [6, 12, 18].map(h =>
     '<div class="tl-gl" style="left:' + tlHourPct(dayStart, h) + '%"></div>'
@@ -207,7 +274,7 @@ function tlRowHTML(dayStart, isToday) {
     const p = partOnDay(tlSpanLog(l), dayStart);
     if (!p) return '';
     const title = 'Sommeil · ' + fmtTime(l.start) + ' → ' + fmtTime(tlEndOf(l)) + ' · ' + fmtDur(l.duration);
-    return '<div class="tl-sleep" title="' + escapeHtml(title) + '" style="' + segStyle(p, 0.8) + '"></div>';
+    return '<div class="tl-sleep" data-tip="' + escapeHtml(title) + '" style="' + segStyle(p, 0.8) + '"></div>';
   }).join('');
 
   const feed = logs.filter(l => l.type === 'feed').map(l => {
@@ -216,13 +283,13 @@ function tlRowHTML(dayStart, isToday) {
     const side  = l.side === 'left' ? 'left' : 'right';
     const title = (side === 'left' ? 'Sein gauche' : 'Sein droit') + ' · ' +
       fmtTime(l.start) + ' → ' + fmtTime(tlEndOf(l)) + ' · ' + fmtDur(l.duration);
-    return '<div class="tl-feed ' + side + '" title="' + escapeHtml(title) + '" style="' + segStyle(p, 1.2) + '"></div>';
+    return '<div class="tl-feed ' + side + '" data-tip="' + escapeHtml(title) + '" style="' + segStyle(p, 1.2) + '"></div>';
   }).join('');
 
   const diaper = logs.filter(l => l.type === 'diaper').map(l => {
     const kind  = l.diaperType === 'dirty' ? 'dirty' : l.diaperType === 'mixed' ? 'mixed' : 'wet';
     const label = (kind === 'wet' ? 'Pipi' : kind === 'dirty' ? 'Selle' : 'Mixte') + ' · ' + fmtTime(l.timestamp);
-    return '<div class="tl-dia ' + kind + '" title="' + escapeHtml(label) + '" style="left:' + pct(Number(l.timestamp)) + '%"></div>';
+    return '<div class="tl-dia ' + kind + '" data-tip="' + escapeHtml(label) + '" style="left:' + pct(Number(l.timestamp)) + '%"></div>';
   }).join('');
 
   const now = isToday ? '<div class="tl-now" style="left:' + pct(Date.now()) + '%"></div>' : '';
@@ -257,6 +324,8 @@ function buildTlRangeSelector(N) {
 }
 
 function renderTimeline() {
+  hideTlTip();     // le segment ouvert peut disparaître : on ferme la bulle
+  syncTlLegend();
   const c     = document.getElementById('timeline-container');
   const navEl = document.getElementById('tl-day-nav');
   if (!c) return;
@@ -626,6 +695,18 @@ function renderStats() {
     }));
 }
 
+// Opacité de référence : celle validée pour la fenêtre de 14 jours.
+const RHYTHM_REF_DAYS = 14;
+
+/**
+ * Opacité unitaire d'une bande selon la durée N, à teinte égale.
+ * Une zone habituelle est couverte par ~N bandes superposées : pour que sa teinte
+ * finale (1 - (1 - a)^N) reste celle de la référence, a = 1 - (1 - aRef)^(14 / N).
+ */
+function rhythmAlpha(alphaRef, N) {
+  return 1 - Math.pow(1 - alphaRef, RHYTHM_REF_DAYS / N);
+}
+
 // ── RHYTHM HEATMAP (generic) ──────────────────────────────────────────────────
 // Axe 0h–24h commun à toutes les journées de la fenêtre, à faible opacité.
 // Chaque morceau de chrono est placé sur l'axe de SA journée (heure locale) : un sommeil
@@ -637,6 +718,7 @@ function buildRhythmHeatmapSVG(logs, N, { color, alpha, minPx, useDuration, capt
   const plotW = W - padL - padR;
   const trackH = H - padT - padB;
   const windowStart = addDays(todayStart(), -(N - 1));
+  const barAlpha    = rhythmAlpha(alpha, N);
 
   let svg = `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" style="width:100%;display:block">`;
   svg += `<rect x="${padL}" y="${padT}" width="${plotW}" height="${trackH}" fill="${color}" fill-opacity="0.05" rx="4"/>`;
@@ -657,7 +739,7 @@ function buildRhythmHeatmapSVG(logs, N, { color, alpha, minPx, useDuration, capt
       const x0   = padL + ((p.start - p.dayStart) / len) * plotW;
       const wRaw = useDuration ? (p.duration / len) * plotW : minPx;
       const w    = Math.max(0, Math.min(Math.max(wRaw, minPx), padL + plotW - x0));
-      svg += `<rect x="${x0.toFixed(2)}" y="${padT}" width="${w.toFixed(2)}" height="${trackH}" fill="${color}" fill-opacity="${alpha}" rx="2"/>`;
+      svg += `<rect x="${x0.toFixed(2)}" y="${padT}" width="${w.toFixed(2)}" height="${trackH}" fill="${color}" fill-opacity="${barAlpha.toFixed(4)}" rx="2"/>`;
       days.add(p.dayStart);
       counted = true;
     });

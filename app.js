@@ -318,6 +318,13 @@ function setTlRange(days) {
   renderTimeline();
 }
 
+/** Affiche ou masque un type dans le calendrier (clic sur la légende), mémorisé. */
+function toggleTlKind(kind) {
+  if (tlHidden.has(kind)) tlHidden.delete(kind); else tlHidden.add(kind);
+  try { localStorage.setItem('bt_tl_hidden', JSON.stringify([...tlHidden])); } catch { /* stockage indisponible */ }
+  renderTimeline();
+}
+
 function toggleTlRangeCustom() {
   const wrap = document.getElementById('tl-range-custom');
   if (!wrap) return;
@@ -464,6 +471,7 @@ function switchTab(name, silent) {
     document.getElementById('section-'+t).classList.toggle('active', t === name);
     document.getElementById('tab-'+t).classList.toggle('active', t === name);
   });
+  hideTlTip();
   currentTab = name;
   sessionStorage.setItem('bt_tab', name);
   window.scrollTo(0, 0);
@@ -789,6 +797,34 @@ document.addEventListener('visibilitychange', () => {
   }, { passive: true });
   });
 })();
+
+// ── CALENDRIER : infobulle au tap (mobile) ou au survol (souris) ─────────────
+// tlLastPointer indique si le dernier geste vient de la souris : dans ce cas le survol
+// suffit, et le 'click' qui suit ne doit pas refermer la bulle.
+let tlLastPointer = 'mouse';
+document.addEventListener('pointerdown', e => { tlLastPointer = e.pointerType; }, true);
+
+document.addEventListener('pointerover', e => {
+  if (e.pointerType !== 'mouse') return;
+  const seg = e.target.closest?.('#timeline-container [data-tip]');
+  if (seg && seg !== tlTipTarget) showTlTip(seg, false);
+});
+
+document.addEventListener('pointerout', e => {
+  if (e.pointerType !== 'mouse') return;
+  const seg = e.target.closest?.('#timeline-container [data-tip]');
+  if (seg && !seg.contains(e.relatedTarget)) hideTlTip();
+});
+
+document.addEventListener('click', e => {
+  if (tlLastPointer === 'mouse') return;
+  const seg = e.target.closest?.('#timeline-container [data-tip]');
+  if (!seg) { hideTlTip(); return; }                  // tap ailleurs : on referme
+  if (seg === tlTipTarget) hideTlTip();               // second tap sur le même segment
+  else showTlTip(seg, true);                          // ferme automatiquement après 3 s
+});
+
+window.addEventListener('scroll', hideTlTip, { passive: true });
 
 // ── SERVICE WORKER ────────────────────────────────────────────────────────────
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(() => {});

@@ -13,7 +13,7 @@
   <script>
     (function(){var t=localStorage.getItem('bt_theme');if(t==='dark')document.documentElement.setAttribute('data-theme','dark');})();
   </script>
-  <link rel="stylesheet" href="main.css?v=75"/>
+  <link rel="stylesheet" href="main.css?v=76"/>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>
@@ -169,12 +169,12 @@
     </button>
     <div id="tl-day-nav"></div>
     <div class="card card--compact">
-      <div class="tl-legend tl-legend--bare">
-        <div class="tl-leg-item"><div class="tl-leg-bar left"></div>Sein gauche</div>
-        <div class="tl-leg-item"><div class="tl-leg-bar right"></div>Sein droit</div>
-        <div class="tl-leg-item"><div class="tl-leg-bar sleep"></div>Sommeil</div>
-        <div class="tl-leg-item"><div class="tl-leg-dot wet"></div>Pipi</div>
-        <div class="tl-leg-item"><div class="tl-leg-dot dirty"></div>Selle</div>
+      <div class="tl-legend tl-legend--bare" role="group" aria-label="Afficher ou masquer dans le calendrier">
+        <button type="button" class="tl-leg-item" data-tl-kind="feed-left"  aria-pressed="true" onclick="toggleTlKind('feed-left')"><span class="tl-leg-bar left"></span>Sein gauche</button>
+        <button type="button" class="tl-leg-item" data-tl-kind="feed-right" aria-pressed="true" onclick="toggleTlKind('feed-right')"><span class="tl-leg-bar right"></span>Sein droit</button>
+        <button type="button" class="tl-leg-item" data-tl-kind="sleep"      aria-pressed="true" onclick="toggleTlKind('sleep')"><span class="tl-leg-bar sleep"></span>Sommeil</button>
+        <button type="button" class="tl-leg-item" data-tl-kind="wet"        aria-pressed="true" onclick="toggleTlKind('wet')"><span class="tl-leg-dot wet"></span>Pipi</button>
+        <button type="button" class="tl-leg-item" data-tl-kind="dirty"      aria-pressed="true" onclick="toggleTlKind('dirty')"><span class="tl-leg-dot dirty"></span>Selle</button>
       </div>
     </div>
     <div id="timeline-container"></div>
@@ -317,11 +317,11 @@
 <div class="toast" id="toast"></div>
 
 <!-- ── SCRIPTS (all at root level, versioned) ── -->
-<script src="utils.js?v=75"></script>
-<script src="db.js?v=75"></script>
-<script src="state.js?v=75"></script>
-<script src="render.js?v=75"></script>
-<script src="sync.js?v=75"></script>
-<script src="app.js?v=75"></script>
+<script src="utils.js?v=76"></script>
+<script src="db.js?v=76"></script>
+<script src="state.js?v=76"></script>
+<script src="render.js?v=76"></script>
+<script src="sync.js?v=76"></script>
+<script src="app.js?v=76"></script>
 </body>
 </html>
