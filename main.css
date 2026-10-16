@@ -351,9 +351,12 @@ body{
 .modal-field input[type=text],
 .modal-field input[type=number]{
   width:100%;border:1px solid var(--border);border-radius:var(--radius-sm);
-  padding:10px 12px;font-size:15px;color:var(--text);background:var(--bg);
+  padding:10px 12px;font-size:16px;color:var(--text);background:var(--bg); /* 16px : iOS ne zoome pas au focus */
   font-family:inherit;-webkit-appearance:none;appearance:none;
 }
+/* Date et heure : sélecteur natif du système, sans apparence forcée */
+.modal-field input[type=time],
+.modal-field input[type=date]{-webkit-appearance:auto;appearance:auto}
 .modal-field input:focus{outline:none;border-color:var(--pink)}
 .modal-actions{display:flex;gap:10px;margin-top:18px}
 .btn{

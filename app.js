@@ -679,97 +679,133 @@ function copyShareLink() {
 }
 
 // ── EDIT MODAL ────────────────────────────────────────────────────────────────
+// Pas de bouton « Enregistrer » : chaque champ s'applique dès qu'il change
+// (même principe que le sélecteur de jour). Une saisie incohérente est refusée
+// et les champs reviennent aux valeurs enregistrées.
 function openEdit(id) {
   editingLog = allLogs.find(l => l.id === id);
   if (!editingLog) return;
+  renderEditBody();
+  document.getElementById('modal-overlay').classList.add('open');
+}
+
+/** Dessine les champs du modal à partir du log en cours d'édition. */
+function renderEditBody() {
+  const log = editingLog;
   const b = document.getElementById('modal-body');
-  if (editingLog.type === 'diaper') {
-    const dtypes = ['wet','dirty','mixed'];
-    const dlabels = { wet:'💧 Pipi', dirty:'💩 Selle', mixed:'💧💩 Mixte' };
+  if (!log) { b.innerHTML = ''; return; }
+
+  if (log.type === 'diaper') {
+    const dtypes  = ['wet', 'dirty', 'mixed'];
+    const dlabels = { wet: '💧 Pipi', dirty: '💩 Selle', mixed: '💧💩 Mixte' };
     b.innerHTML = `<div class="modal-row">
-      <div class="modal-field"><label>Date</label><input type="date" id="ed-d" value="${fmtYMD(editingLog.timestamp)}"/></div>
-      <div class="modal-field"><label>Heure</label><input type="time" id="ed-t" value="${fmtHM(editingLog.timestamp)}"/></div>
+      <div class="modal-field"><label>Date</label><input type="date" id="ed-d" value="${fmtYMD(log.timestamp)}" onchange="commitEdit()"/></div>
+      <div class="modal-field"><label>Heure</label><input type="time" id="ed-t" value="${fmtHM(log.timestamp)}" onchange="commitEdit()"/></div>
     </div>
     <div class="modal-field"><label>Type</label>
       <div class="edit-type-group">
-        ${dtypes.map(t => `<button onclick="setEditDiaperType('${t}',this)" id="ed-dtype-${t}"
-          class="edit-type-btn${editingLog.diaperType===t?' active':''}">
-          ${dlabels[t]}</button>`).join('')}
+        ${dtypes.map(t => `<button onclick="setEditDiaperType('${t}')" id="ed-dtype-${t}"
+          class="edit-type-btn${log.diaperType === t ? ' active' : ''}">${dlabels[t]}</button>`).join('')}
       </div>
     </div>`;
-  } else if (editingLog.type === 'bottle') {
+  } else if (log.type === 'bottle') {
     b.innerHTML = `<div class="modal-row">
-      <div class="modal-field"><label>Date</label><input type="date" id="ed-d" value="${fmtYMD(editingLog.timestamp)}"/></div>
-      <div class="modal-field"><label>Heure</label><input type="time" id="ed-t" value="${fmtHM(editingLog.timestamp)}"/></div>
+      <div class="modal-field"><label>Date</label><input type="date" id="ed-d" value="${fmtYMD(log.timestamp)}" onchange="commitEdit()"/></div>
+      <div class="modal-field"><label>Heure</label><input type="time" id="ed-t" value="${fmtHM(log.timestamp)}" onchange="commitEdit()"/></div>
     </div>
     <div class="modal-field"><label>Volume (ml)</label>
-      <input type="number" id="ed-vol" min="0" max="999" step="10" value="${editingLog.volume || 0}" class="edit-vol-input"/>
+      <input type="number" id="ed-vol" min="0" max="999" step="10" value="${log.volume || 0}" class="edit-vol-input" onchange="commitEdit()"/>
     </div>`;
   } else {
-    // feed or sleep — for feed, add a side selector
-    const sideSelector = editingLog.type === 'feed' ? `
+    // feed ou sleep — pour une tétée, sélecteur de sein
+    const sideSelector = log.type === 'feed' ? `
     <div class="modal-field"><label>Sein</label>
       <div class="edit-type-group">
-        ${[['left','👈 Gauche'],['right','Droit 👉']].map(([val, label]) => `
-          <button id="ed-side-${val}" onclick="setEditFeedSide('${val}',this)"
-            class="edit-type-btn${editingLog.side===val?' active':''}">
-            ${label}
-          </button>`).join('')}
+        ${[['left', '👈 Gauche'], ['right', 'Droit 👉']].map(([val, label]) => `
+          <button id="ed-side-${val}" onclick="setEditFeedSide('${val}')"
+            class="edit-type-btn${log.side === val ? ' active' : ''}">${label}</button>`).join('')}
       </div>
     </div>` : '';
     b.innerHTML = `<div class="modal-row">
-      <div class="modal-field"><label>Début Date</label><input type="date" id="es-d" value="${fmtYMD(editingLog.start)}"/></div>
-      <div class="modal-field"><label>Début Heure</label><input type="time" id="es-t" value="${fmtHM(editingLog.start)}"/></div>
+      <div class="modal-field"><label>Début Date</label><input type="date" id="es-d" value="${fmtYMD(log.start)}" onchange="commitEdit()"/></div>
+      <div class="modal-field"><label>Début Heure</label><input type="time" id="es-t" value="${fmtHM(log.start)}" onchange="commitEdit()"/></div>
     </div><div class="modal-row">
-      <div class="modal-field"><label>Fin Date</label><input type="date" id="ee-d" value="${fmtYMD(editingLog.end)}"/></div>
-      <div class="modal-field"><label>Fin Heure</label><input type="time" id="ee-t" value="${fmtHM(editingLog.end)}"/></div>
+      <div class="modal-field"><label>Fin Date</label><input type="date" id="ee-d" value="${fmtYMD(log.end)}" onchange="commitEdit()"/></div>
+      <div class="modal-field"><label>Fin Heure</label><input type="time" id="ee-t" value="${fmtHM(log.end)}" onchange="commitEdit()"/></div>
     </div>${sideSelector}`;
   }
-  document.getElementById('modal-overlay').classList.add('open');
-}
-function setEditFeedSide(side, btn) {
-  editingLog.side = side;
-  ['left', 'right'].forEach(s => {
-    const b = document.getElementById('ed-side-' + s);
-    if (b) b.classList.toggle('active', s === side);
-  });
 }
 
-function setEditDiaperType(type, btn) {
+/** Refuse une saisie incohérente : message, puis retour aux valeurs enregistrées. */
+function editRefused(msg) {
+  showToast('⚠️ ' + msg);
+  renderEditBody();
+}
+
+/**
+ * Lit les champs du modal et applique ce qui a réellement changé.
+ * Ne touche au log qu'après validation complète : une saisie refusée ne modifie rien.
+ */
+function commitEdit() {
+  const log = editingLog;
+  if (!log) return;
+  const dt = (dId, tId) => {
+    const d = document.getElementById(dId)?.value, t = document.getElementById(tId)?.value;
+    return d && t ? combineDateTime(d, t) : NaN;
+  };
+
+  if (log.type === 'feed' || log.type === 'sleep') {
+    const start = dt('es-d', 'es-t'), end = dt('ee-d', 'ee-t');
+    if (!Number.isFinite(start) || !Number.isFinite(end)) return editRefused('Date ou heure incomplète');
+    if (end <= start) return editRefused('La fin doit être après le début');
+    if (start === log.start && end === log.end) return;
+    Object.assign(log, { start, end, duration: end - start, timestamp: end });
+  } else if (log.type === 'diaper') {
+    const ts = dt('ed-d', 'ed-t');
+    if (!Number.isFinite(ts)) return editRefused('Date ou heure incomplète');
+    if (ts === log.timestamp) return;
+    log.timestamp = ts;
+  } else {   // biberon
+    const ts  = dt('ed-d', 'ed-t');
+    const vol = parseInt(document.getElementById('ed-vol')?.value, 10);
+    if (!Number.isFinite(ts)) return editRefused('Date ou heure incomplète');
+    if (!Number.isFinite(vol) || vol < 0) return editRefused('Volume invalide');
+    if (ts === log.timestamp && vol === log.volume) return;
+    log.timestamp = ts;
+    log.volume    = vol;
+  }
+  updateLogAction(log);
+  showToast('Modifié !');
+}
+
+function setEditFeedSide(side) {
+  if (!editingLog || editingLog.side === side) return;
+  editingLog.side = side;
+  ['left', 'right'].forEach(s => document.getElementById('ed-side-' + s)?.classList.toggle('active', s === side));
+  updateLogAction(editingLog);
+  showToast('Modifié !');
+}
+
+function setEditDiaperType(type) {
+  if (!editingLog || editingLog.diaperType === type) return;
   editingLog.diaperType = type;
-  ['wet','dirty','mixed'].forEach(t => {
-    const b = document.getElementById('ed-dtype-'+t);
-    if (b) b.classList.toggle('active', t === type);
-  });
+  ['wet', 'dirty', 'mixed'].forEach(t => document.getElementById('ed-dtype-' + t)?.classList.toggle('active', t === type));
+  updateLogAction(editingLog);
+  showToast('Modifié !');
 }
 
 function closeEditModal(e) {
   if (e && e.target !== document.getElementById('modal-overlay')) return;
+  commitEdit();   // une valeur encore en saisie (ex. volume au clavier) est appliquée avant de fermer
   document.getElementById('modal-overlay').classList.remove('open');
   editingLog = null;
 }
-function saveEntry() {
-  if (!editingLog) return;
-  if (editingLog.type === 'diaper') {
-    editingLog.timestamp = combineDateTime(document.getElementById('ed-d').value, document.getElementById('ed-t').value);
-  } else if (editingLog.type === 'bottle') {
-    editingLog.timestamp = combineDateTime(document.getElementById('ed-d').value, document.getElementById('ed-t').value);
-    editingLog.volume    = Math.max(0, parseInt(document.getElementById('ed-vol').value, 10) || 0);
-  } else {
-    const start = combineDateTime(document.getElementById('es-d').value, document.getElementById('es-t').value);
-    const end   = combineDateTime(document.getElementById('ee-d').value, document.getElementById('ee-t').value);
-    if (end <= start) { showToast('⚠️ La fin doit être après le début'); return; }
-    editingLog.start     = start;
-    editingLog.end       = end;
-    editingLog.duration  = end - start;
-    editingLog.timestamp = end;
-  }
-  updateLogAction(editingLog);
-  closeEditModal(); showToast('Modifié !');
-}
+
 function deleteEntry() {
   if (!editingLog || !confirm('Supprimer cet événement ?')) return;
-  deleteLogAction(editingLog.id);
+  const id = editingLog.id;
+  editingLog = null;               // pour que la fermeture ne réécrive pas le log supprimé
+  deleteLogAction(id);
   closeEditModal(); showToast('Supprimé');
 }
 
