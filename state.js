@@ -11,7 +11,6 @@ let activeProfileId  = null;
 let familyId         = null;
 let allLogs          = [];
 let pendingSyncIds   = new Set(); // Logs à ajouter/modifier sur le serveur
-let pendingDeletes   = new Set(); // Legacy : non alimenté, conservé pour compatibilité
 let pendingTimers    = {};        // Une écriture en attente par chrono : { 'feed_left': job } (sync.js)
 let closedSessions   = new Set(); // sid des sessions déjà terminées sur cet appareil
 let timerEpoch       = 0;         // Incrémenté à chaque action locale sur un chrono
@@ -98,9 +97,9 @@ function migrateLegacyJob(pt) {
 }
 
 function loadSyncQueues() {
+  localStorage.removeItem('bt_pending_del'); // ancienne file, plus utilisée
   try {
     pendingSyncIds = new Set(JSON.parse(localStorage.getItem('bt_pending_sync') || '[]'));
-    pendingDeletes = new Set(JSON.parse(localStorage.getItem('bt_pending_del') || '[]'));
     closedSessions = new Set(JSON.parse(localStorage.getItem('bt_closed_sessions') || '[]'));
     const raw = JSON.parse(localStorage.getItem('bt_pending_timers') || '{}');
     pendingTimers = {};
@@ -109,7 +108,7 @@ function loadSyncQueues() {
       if (job) pendingTimers[key] = job;
     }
   } catch {
-    pendingSyncIds = new Set(); pendingDeletes = new Set();
+    pendingSyncIds = new Set();
     pendingTimers  = {};        closedSessions  = new Set();
   }
   saveSyncQueues(); // fige les sid de migration : ils ne doivent pas changer à chaque chargement
@@ -117,7 +116,6 @@ function loadSyncQueues() {
 
 function saveSyncQueues() {
   localStorage.setItem('bt_pending_sync',    JSON.stringify([...pendingSyncIds]));
-  localStorage.setItem('bt_pending_del',     JSON.stringify([...pendingDeletes]));
   localStorage.setItem('bt_pending_timers',  JSON.stringify(pendingTimers));
   localStorage.setItem('bt_closed_sessions', JSON.stringify([...closedSessions]));
 }
@@ -214,7 +212,7 @@ async function deleteLogAction(id) {
   renderCurrentTab();
   await dbDel(id);
 
-  // On réutilise pendingSyncIds (pas pendingDeletes) car c'est un upsert, pas un DELETE.
+  // Suppression logique : on passe par pendingSyncIds (c'est un upsert, pas un DELETE).
   pendingSyncIds.add(id);
   saveSyncQueues();
 

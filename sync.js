@@ -115,16 +115,7 @@ async function syncWithRemote() {
   if (!navigator.onLine || !supabaseClient || !familyId) return;
   setSyncDot('syncing');
   try {
-    // 1. Exécuter les suppressions en attente (prioritaire)
-    if (pendingDeletes.size > 0) {
-      for (const id of pendingDeletes) {
-        await supabaseClient.from('logs').delete().eq('id', id);
-      }
-      pendingDeletes.clear();
-      saveSyncQueues();
-    }
-
-    // 2. Pousser les créations/modifications en attente
+    // 1. Pousser les créations/modifications en attente
     if (pendingSyncIds.size > 0) {
       const toPush = allLogs.filter(l => pendingSyncIds.has(l.id));
       if (toPush.length > 0) {
@@ -135,12 +126,12 @@ async function syncWithRemote() {
       saveSyncQueues();
     }
 
-    // 3. Pousser les chronos en attente hors ligne
+    // 2. Pousser les chronos en attente hors ligne
     await flushAllTimers();
 
     let uiChanged = false;
 
-    // 5. Delta Sync — récupère tout ce qui a changé depuis la dernière synchro,
+    // 4. Delta Sync — récupère tout ce qui a changé depuis la dernière synchro,
     // en paginant par tranches de 1000 pour ne jamais tronquer silencieusement.
     const syncKey = 'bt_last_sync_' + familyId;
     const isInitialSync = allLogs.length === 0;
@@ -153,7 +144,7 @@ async function syncWithRemote() {
     for (const sLog of recentData) {
       const idx = allLogs.findIndex(l => l.id === sLog.id);
       // Éviter d'écraser une modif locale non encore envoyée (race condition)
-      if (!pendingSyncIds.has(sLog.id) && !pendingDeletes.has(sLog.id)) {
+      if (!pendingSyncIds.has(sLog.id)) {
         if (sLog.deleted) {
           // Soft delete distant : retirer de l'UI et d'IDB
           if (idx >= 0) allLogs = allLogs.filter(l => l.id !== sLog.id);
@@ -171,10 +162,10 @@ async function syncWithRemote() {
     localStorage.setItem(syncKey, new Date(Date.now() - 5000).toISOString());
     if (uiChanged) renderCurrentTab();
 
-    // 6. Synchroniser les chronomètres en cours
+    // 5. Synchroniser les chronomètres en cours
     await syncTimersFromRemote();
 
-    // 7. Synchroniser le profil
+    // 6. Synchroniser le profil
     await syncBabyNameFromRemote();
 
     setSyncDot('ok');
@@ -487,7 +478,6 @@ function setupRealtime() {
         renderCurrentTab();
       } else if (eventType === 'DELETE') {
         // Hard delete (ex: reset complet de la famille via resetCurrentProfile)
-        if (pendingDeletes.has(o.id)) return;
         allLogs = allLogs.filter(l => l.id !== o.id); dbDel(o.id); renderCurrentTab();
       }
     })
