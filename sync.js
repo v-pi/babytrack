@@ -162,6 +162,9 @@ async function syncWithRemote() {
     localStorage.setItem(syncKey, new Date(Date.now() - 5000).toISOString());
     if (uiChanged) renderCurrentTab();
 
+    // 4 bis. Restauration ponctuelle des logs récents (voir rescueRecentLogs ; à retirer ensuite)
+    await rescueRecentLogs();
+
     // 5. Synchroniser les chronomètres en cours
     await syncTimersFromRemote();
 
@@ -173,6 +176,105 @@ async function syncWithRemote() {
   } catch (e) {
     console.error('Sync error:', e);
     setSyncDot('error');
+  }
+}
+
+const RESCUE_DAYS       = 8;
+const RESCUE_MAX_TRIES  = 3;     
+const RESCUE_ID_CHUNK   = 100;   // ids par requête de lecture (longueur d'URL)
+const RESCUE_PUSH_CHUNK = 500;
+let _rescueRunning = false;
+
+/** Date ISO → ms, en ramenant les microsecondes de Postgres à 3 décimales (Safari est strict). */
+function rescueStampMs(s) {
+  if (!s) return 0;
+  return Date.parse(String(s).replace(/(\.\d{3})\d+/, '$1')) || 0;
+}
+
+/** Instant représentatif d'un log : début pour un chrono, timestamp pour un point. 0 si inconnu. */
+function rescueAnchor(l) {
+  const t = Number(l.start !== undefined && l.start !== null ? l.start : l.timestamp);
+  return Number.isFinite(t) ? t : 0;
+}
+
+/** Version serveur (updated_at) d'une liste d'ids de la famille. Lève en cas d'erreur réseau. */
+async function fetchServerLogStamps(ids) {
+  const out = new Map();
+  for (let i = 0; i < ids.length; i += RESCUE_ID_CHUNK) {
+    const { data, error } = await supabaseClient.from('logs')
+      .select('id,updated_at')
+      .eq('family_id', familyId)
+      .in('id', ids.slice(i, i + RESCUE_ID_CHUNK));
+    if (error) throw error;
+    for (const r of data || []) out.set(r.id, rescueStampMs(r.updated_at));
+  }
+  return out;
+}
+
+async function rescueRecentLogs() {
+  if (_rescueRunning || !supabaseClient || !familyId || !navigator.onLine) return;
+  const doneKey  = 'bt_rescue_done_'  + familyId;
+  const triesKey = 'bt_rescue_tries_' + familyId;
+  if (localStorage.getItem(doneKey)) return;
+  const tries = parseInt(localStorage.getItem(triesKey) || '0', 10) || 0;
+  if (tries >= RESCUE_MAX_TRIES) return;
+
+  _rescueRunning = true;
+  try {
+    // 1-2. Candidats locaux récents, comparés à ce que le serveur possède.
+    //      Les ids encore en attente d'envoi sont laissés à la voie normale.
+    const cutoff = Date.now() - RESCUE_DAYS * 86400000;
+    const candidates = allLogs.filter(l => !l.deleted && (!l.family_id || l.family_id === familyId) &&
+      !pendingSyncIds.has(l.id) &&
+      (rescueStampMs(l.updated_at) >= cutoff || rescueAnchor(l) >= cutoff));
+    const serverStamps = await fetchServerLogStamps(candidates.map(l => l.id));
+    const toSend = candidates.filter(l => {
+      const at = serverStamps.get(l.id);
+      return at === undefined || rescueStampMs(l.updated_at) > at;   // absent du serveur, ou plus récent en local
+    });
+
+    if (toSend.length === 0) { localStorage.setItem(doneKey, '1'); return; }   // rien à restaurer
+
+    // 3. Renvoi. L'essai est compté ici : un plantage en cours d'envoi compte aussi.
+    localStorage.setItem(triesKey, String(tries + 1));
+    const stamp = new Date().toISOString();
+    const ids   = new Set(toSend.map(l => l.id));
+    const fresh = [];
+    for (let i = 0; i < allLogs.length; i++) {
+      if (!ids.has(allLogs[i].id)) continue;
+      const row = { ...allLogs[i], updated_at: stamp };
+      allLogs[i] = row;
+      fresh.push(row);
+      if (allLogs.includes(row)) await dbPut(row);   // supprimé ou modifié pendant l'attente : on n'écrase pas
+    }
+    for (let i = 0; i < fresh.length; i += RESCUE_PUSH_CHUNK) {
+      const payload = fresh.slice(i, i + RESCUE_PUSH_CHUNK).map(l => {
+        const r = { ...l, family_id: familyId };
+        delete r.profile_id;                          // colonne inexistante côté serveur
+        return r;
+      });
+      const { error } = await supabaseClient.from('logs').upsert(payload);
+      if (error) throw error;
+    }
+
+    // 4. Vérification : le serveur ignore en silence un envoi refusé, seule une relecture prouve l'arrivée.
+    const stampValue = rescueStampMs(stamp);
+    const sentIds    = fresh.map(l => l.id);
+    const after      = await fetchServerLogStamps(sentIds);
+    const stillHere  = new Set(allLogs.map(l => l.id));
+    const missing    = sentIds.filter(id => stillHere.has(id) && !(after.get(id) >= stampValue));
+
+    if (missing.length === 0) {
+      localStorage.setItem(doneKey, '1');
+      showToast(sentIds.length + (sentIds.length > 1 ? ' logs restaurés' : ' log restauré'));
+    } else {
+      console.warn('[BabyTrack] restauration incomplète :', missing.length, 'log(s) absents du serveur');
+      showToast('Restauration incomplète' + (tries + 1 < RESCUE_MAX_TRIES ? ', nouvel essai au prochain lancement' : ''));
+    }
+  } catch (e) {
+    console.error('[BabyTrack] restauration :', e);   // aucun essai perdu si l'erreur a eu lieu avant l'envoi
+  } finally {
+    _rescueRunning = false;
   }
 }
 
